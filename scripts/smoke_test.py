@@ -300,8 +300,8 @@ class SmokeTestRunner:
                 return
 
             events = self._parse_sse_events(ood_res)
-            full_text = "".join(e.get("token", "") for e in events if e.get("event") == "token")
-            done_event = next((e for e in events if e.get("event") == "done"), None)
+            full_text = "".join(e.get("content", "") for e in events if e.get("type") == "token" or e.get("event") == "token")
+            done_event = next((e for e in events if e.get("type") == "done" or e.get("event") == "done"), None)
 
             # Verify exact out-of-document fallback
             expected_fallback = "I couldn't find that in the documents."
@@ -319,9 +319,9 @@ class SmokeTestRunner:
                 }
                 in_res = self.user_a_session.post(stream_url, json=in_doc_payload, stream=True, timeout=30)
                 in_events = self._parse_sse_events(in_res)
-                in_text = "".join(e.get("token", "") for e in in_events if e.get("event") == "token")
-                in_done = next((e for e in in_events if e.get("event") == "done"), None)
-                citations = (in_done.get("citations") if in_done else None) or []
+                in_text = "".join(e.get("content", "") for e in in_events if e.get("type") == "token" or e.get("event") == "token")
+                in_done = next((e for e in in_events if e.get("type") == "done" or e.get("event") == "done"), None)
+                citations = (in_done.get("sources") if in_done else None) or (in_done.get("citations") if in_done else None) or []
 
                 has_vacation_info = "25" in in_text or "leave" in in_text.lower() or "vacation" in in_text.lower()
                 has_citations = len(citations) > 0
@@ -351,7 +351,7 @@ class SmokeTestRunner:
             }
             vis_res = self.user_a_session.post(stream_url, json=vis_payload, stream=True, timeout=30)
             events = self._parse_sse_events(vis_res)
-            done_event = next((e for e in events if e.get("event") == "done"), None)
+            done_event = next((e for e in events if e.get("type") == "done" or e.get("event") == "done"), None)
 
             images = (done_event.get("images") if done_event else None) or []
             if images:
@@ -468,7 +468,7 @@ class SmokeTestRunner:
 
             # Admin analytics check
             ana_res = self.admin_session.get(f"{self.base_url}/api/admin/analytics", timeout=10)
-            ana_ok = ana_res.status_code == 200 and "total_questions" in ana_res.json()
+            ana_ok = ana_res.status_code == 200 and ("summary" in ana_res.json() or "total_questions" in ana_res.json())
 
             if fb_ok and ana_ok:
                 self.log_result("Feedback & Admin Analytics", True, "Feedback recorded and /api/admin/analytics returned valid metrics")
