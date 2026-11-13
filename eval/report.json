@@ -1,0 +1,619 @@
+{
+  "summary": {
+    "total_questions": 25,
+    "answerable_questions": 20,
+    "out_of_document_questions": 5,
+    "hit_rate_at_5": 1.0,
+    "answer_accuracy": 1.0,
+    "not_found_accuracy": 1.0,
+    "average_latency_seconds": 6.894,
+    "total_failed": 0
+  },
+  "failed_questions": [],
+  "results": [
+    {
+      "id": 1,
+      "question": "Who is the Chief Executive Officer of ABC Technologies?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "Marcus Vance"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The Chief Executive Officer of ABC Technologies is Dr. Marcus Vance.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 2.014
+    },
+    {
+      "id": 2,
+      "question": "Who is the Chief Technology Officer of ABC Technologies?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "Elena Rostova"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The Chief Technology Officer of ABC Technologies is Elena Rostova.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 1.553
+    },
+    {
+      "id": 3,
+      "question": "What are the four core service capabilities provided by ABC Technologies to corporate clients?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "website development",
+        "domain registration",
+        "email hosting",
+        "digital marketing"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "According to the provided documents, ABC Technologies provides four dedicated core capabilities to corporate clients:\n\n1. Website development\n2. Domain registration\n3. Email hosting\n4. Digital marketing services\n\n(Source: ABC_Technologies_Profile.pdf, page 2)",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 1.046
+    },
+    {
+      "id": 4,
+      "question": "Which client-side technologies does ABC Technologies use for website development?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "HTML5",
+        "CSS",
+        "JavaScript"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "According to the documents, ABC Technologies uses **HTML5, CSS, and JavaScript** for client-side implementation in its website development.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 1.275
+    },
+    {
+      "id": 5,
+      "question": "What is the sprint duration in ABC Technologies' agile delivery framework?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "two-week",
+        "sprint"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "ABC Technologies operates under a structured two-week agile sprint delivery framework.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 0.97
+    },
+    {
+      "id": 6,
+      "question": "What is the corporate email address for business enquiries at ABC Technologies?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "contact@abctechnologies.com"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The corporate email address for business enquiries at ABC Technologies is contact@abctechnologies.com.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 0.872
+    },
+    {
+      "id": 7,
+      "question": "What is the global telephone helpline number for ABC Technologies?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "555-0199"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The global telephone helpline number for ABC Technologies is +1 (800) 555-0199.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 0.994
+    },
+    {
+      "id": 8,
+      "question": "Where is the corporate headquarters of ABC Technologies located?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "100 Innovation Boulevard",
+        "Tech City"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The corporate headquarters of ABC Technologies is located at 100 Innovation Boulevard, Suite 400, Tech City, CA 94016, United States.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 2.519
+    },
+    {
+      "id": 9,
+      "question": "What are the operating hours of the corporate inquiries desk at ABC Technologies?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "8:00 AM",
+        "6:00 PM"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The corporate inquiries desk operates Monday through Friday, 8:00 AM to 6:00 PM Pacific Time.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 6.938
+    },
+    {
+      "id": 10,
+      "question": "How many enterprise partners does ABC Technologies have in its active portfolio?",
+      "type": "answerable",
+      "expected_source_file": "ABC_Technologies_Profile.pdf",
+      "expected_keywords": [
+        "150"
+      ],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "ABC Technologies has more than 150 enterprise partners in its active client portfolio.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 6.693
+    },
+    {
+      "id": 11,
+      "question": "Where is Chede Janakiram located and what is his email address?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "Hyderabad",
+        "dasaradhajanakiramchede@gmail.com"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "Chede Janakiram is located in Hyderabad, India, and his email address is dasaradhajanakiramchede@gmail.com.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 9.823
+    },
+    {
+      "id": 12,
+      "question": "What degree did Chede Janakiram pursue at Mrs. A.V.N. College?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "B.Com",
+        "Computer Applications"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "Chede Janakiram pursued a B.Com in Computer Applications at Mrs. A.V.N. College.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 9.812
+    },
+    {
+      "id": 13,
+      "question": "What GPA did Chede Janakiram achieve in his degree at Mrs. A.V.N. College?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "8.2"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "Chede Janakiram achieved a GPA of 8.2 / 10 in his B.Com in Computer Applications degree at Mrs. A.V.N. College.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 12.614
+    },
+    {
+      "id": 14,
+      "question": "What role did Chede Janakiram hold during his internship at YR Technologies?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "Business Intelligence Intern"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "Chede Janakiram held the role of **Business Intelligence Intern** at YR Technologies from February 2025 to April 2025.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 7.885
+    },
+    {
+      "id": 15,
+      "question": "What segmentation accuracy did the U-Net model achieve on the Data Science Bowl dataset?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "95%"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The U-Net model achieved 95% pixel-level segmentation accuracy on the Data Science Bowl dataset.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 9.889
+    },
+    {
+      "id": 16,
+      "question": "What accuracy did the Artificial Neural Network achieve on telecom customer churn prediction?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "85%"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The Artificial Neural Network achieved 85% accuracy on telecom customer churn prediction.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 9.841
+    },
+    {
+      "id": 17,
+      "question": "How many nodes were in the LangGraph workflow designed for the Agentic RAG Assistant?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "9"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "The LangGraph workflow designed for the Agentic RAG Assistant contained 9 nodes.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 10.75
+    },
+    {
+      "id": 18,
+      "question": "What three custom tools were built in the Agentic RAG Assistant project?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "weather",
+        "math",
+        "web search"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "Based on the provided documents, the three custom tools built in the Agentic RAG Assistant project are:\n\n1.  Weather API\n2.  Math evaluator\n3.  Web search (returning the top 5 results as structured JSON)\n\n(Source: Document Source [1])",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 10.964
+    },
+    {
+      "id": 19,
+      "question": "Which Oracle certification did Chede Janakiram earn?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "Oracle Agentic AI Foundations Associate"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "Chede Janakiram earned the **Oracle Agentic AI Foundations Associate** certification.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 8.978
+    },
+    {
+      "id": 20,
+      "question": "What languages does Chede Janakiram speak according to his resume?",
+      "type": "answerable",
+      "expected_source_file": "ai_janakiram_resume.pdf",
+      "expected_keywords": [
+        "English",
+        "Hindi",
+        "Telugu"
+      ],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": true,
+      "bot_answer": "According to the resume, Chede Janakiram speaks English, Hindi, and Telugu.",
+      "keywords_present": true,
+      "missing_keywords": [],
+      "is_not_found": null,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 10.106
+    },
+    {
+      "id": 21,
+      "question": "What is the company policy for employee gym membership reimbursement?",
+      "type": "out_of_document",
+      "expected_source_file": null,
+      "expected_keywords": [],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": null,
+      "bot_answer": "I couldn't find that in the documents.",
+      "keywords_present": null,
+      "missing_keywords": null,
+      "is_not_found": true,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 9.051
+    },
+    {
+      "id": 22,
+      "question": "What are the cafeteria lunch hours and daily meal menu options?",
+      "type": "out_of_document",
+      "expected_source_file": null,
+      "expected_keywords": [],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": null,
+      "bot_answer": "I couldn't find that in the documents.",
+      "keywords_present": null,
+      "missing_keywords": null,
+      "is_not_found": true,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 8.967
+    },
+    {
+      "id": 23,
+      "question": "How many days of paid parental leave are offered for new parents?",
+      "type": "out_of_document",
+      "expected_source_file": null,
+      "expected_keywords": [],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": null,
+      "bot_answer": "I couldn't find that in the documents.",
+      "keywords_present": null,
+      "missing_keywords": null,
+      "is_not_found": true,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 10.155
+    },
+    {
+      "id": 24,
+      "question": "What is the return and refund policy for hardware purchased from the company store?",
+      "type": "out_of_document",
+      "expected_source_file": null,
+      "expected_keywords": [],
+      "retrieved_top5_sources": [
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ai_janakiram_resume.pdf"
+      ],
+      "hit_at_5": null,
+      "bot_answer": "I couldn't find that in the documents.",
+      "keywords_present": null,
+      "missing_keywords": null,
+      "is_not_found": true,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 13.94
+    },
+    {
+      "id": 25,
+      "question": "What are the parking guidelines and permit rules for the underground garage in building B?",
+      "type": "out_of_document",
+      "expected_source_file": null,
+      "expected_keywords": [],
+      "retrieved_top5_sources": [
+        "ai_janakiram_resume.pdf",
+        "ai_janakiram_resume.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf",
+        "ABC_Technologies_Profile.pdf"
+      ],
+      "hit_at_5": null,
+      "bot_answer": "I couldn't find that in the documents.",
+      "keywords_present": null,
+      "missing_keywords": null,
+      "is_not_found": true,
+      "passed": true,
+      "failure_reasons": [],
+      "latency_seconds": 4.692
+    }
+  ]
+}

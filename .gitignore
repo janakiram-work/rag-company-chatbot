@@ -1,0 +1,49 @@
+# Environment credentials
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+*.egg-info/
+
+# Deliverable archives
+*.zip
+*.tar.gz
+*.rar
+
+# Application logs
+logs/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Data and dependencies
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+chroma_data/
+node_modules/
+old_project/
+
+# Frontend distribution (must be tracked for production deployment without requiring node)
+!frontend/dist/
+!frontend/dist/**

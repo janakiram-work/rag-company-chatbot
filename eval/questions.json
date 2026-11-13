@@ -1,0 +1,147 @@
+[
+  {
+    "id": 1,
+    "question": "Who is the Chief Executive Officer of ABC Technologies?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["Marcus Vance"]
+  },
+  {
+    "id": 2,
+    "question": "Who is the Chief Technology Officer of ABC Technologies?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["Elena Rostova"]
+  },
+  {
+    "id": 3,
+    "question": "What are the four core service capabilities provided by ABC Technologies to corporate clients?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["website development", "domain registration", "email hosting", "digital marketing"]
+  },
+  {
+    "id": 4,
+    "question": "Which client-side technologies does ABC Technologies use for website development?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["HTML5", "CSS", "JavaScript"]
+  },
+  {
+    "id": 5,
+    "question": "What is the sprint duration in ABC Technologies' agile delivery framework?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["two-week", "sprint"]
+  },
+  {
+    "id": 6,
+    "question": "What is the corporate email address for business enquiries at ABC Technologies?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["contact@abctechnologies.com"]
+  },
+  {
+    "id": 7,
+    "question": "What is the global telephone helpline number for ABC Technologies?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["555-0199"]
+  },
+  {
+    "id": 8,
+    "question": "Where is the corporate headquarters of ABC Technologies located?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["100 Innovation Boulevard", "Tech City"]
+  },
+  {
+    "id": 9,
+    "question": "What are the operating hours of the corporate inquiries desk at ABC Technologies?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["8:00 AM", "6:00 PM"]
+  },
+  {
+    "id": 10,
+    "question": "How many enterprise partners does ABC Technologies have in its active portfolio?",
+    "expected_source_file": "ABC_Technologies_Profile.pdf",
+    "expected_keywords": ["150"]
+  },
+  {
+    "id": 11,
+    "question": "Where is Chede Janakiram located and what is his email address?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["Hyderabad", "dasaradhajanakiramchede@gmail.com"]
+  },
+  {
+    "id": 12,
+    "question": "What degree did Chede Janakiram pursue at Mrs. A.V.N. College?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["B.Com", "Computer Applications"]
+  },
+  {
+    "id": 13,
+    "question": "What GPA did Chede Janakiram achieve in his degree at Mrs. A.V.N. College?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["8.2"]
+  },
+  {
+    "id": 14,
+    "question": "What role did Chede Janakiram hold during his internship at YR Technologies?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["Business Intelligence Intern"]
+  },
+  {
+    "id": 15,
+    "question": "What segmentation accuracy did the U-Net model achieve on the Data Science Bowl dataset?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["95%"]
+  },
+  {
+    "id": 16,
+    "question": "What accuracy did the Artificial Neural Network achieve on telecom customer churn prediction?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["85%"]
+  },
+  {
+    "id": 17,
+    "question": "How many nodes were in the LangGraph workflow designed for the Agentic RAG Assistant?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["9"]
+  },
+  {
+    "id": 18,
+    "question": "What three custom tools were built in the Agentic RAG Assistant project?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["weather", "math", "web search"]
+  },
+  {
+    "id": 19,
+    "question": "Which Oracle certification did Chede Janakiram earn?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["Oracle Agentic AI Foundations Associate"]
+  },
+  {
+    "id": 20,
+    "question": "What languages does Chede Janakiram speak according to his resume?",
+    "expected_source_file": "ai_janakiram_resume.pdf",
+    "expected_keywords": ["English", "Hindi", "Telugu"]
+  },
+  {
+    "id": 21,
+    "question": "What is the company policy for employee gym membership reimbursement?",
+    "expected": "NOT_FOUND"
+  },
+  {
+    "id": 22,
+    "question": "What are the cafeteria lunch hours and daily meal menu options?",
+    "expected": "NOT_FOUND"
+  },
+  {
+    "id": 23,
+    "question": "How many days of paid parental leave are offered for new parents?",
+    "expected": "NOT_FOUND"
+  },
+  {
+    "id": 24,
+    "question": "What is the return and refund policy for hardware purchased from the company store?",
+    "expected": "NOT_FOUND"
+  },
+  {
+    "id": 25,
+    "question": "What are the parking guidelines and permit rules for the underground garage in building B?",
+    "expected": "NOT_FOUND"
+  }
+]
