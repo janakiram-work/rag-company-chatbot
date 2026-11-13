@@ -79,7 +79,7 @@ A production-ready Retrieval-Augmented Generation (RAG) multimodal enterprise ch
               ┌───────────────┴───────────────┐              │
               ▼                               ▼              ▼
      ┌─────────────────┐             ┌─────────────────┐ ┌─────────────────┐
-     │ SQLite Database │             │ ChromaDB Vector │ │  Local Storage  │
+     │ postgre Database│             │ ChromaDB Vector │ │  Local Storage  │
      │  (SQLAlchemy)   │             │  (Persistent)   │ │ (PDFs & Images) │
      │ - Users & Roles │             │ - BGE-small-en  │ │ - uploads/docs/ │
      │ - Conversations │             │ - 900-char text │ │ - uploads/img/  │

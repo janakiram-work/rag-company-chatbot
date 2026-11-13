@@ -26,6 +26,9 @@ from backend.config import (
     JWT_ALGORITHM,
     DEMO_MODE,
     GROQ_API_KEY,
+    APP_ENV,
+    ADMIN_EMAIL,
+    ADMIN_PASSWORD,
 )
 from backend.database import init_db, SessionLocal, Document, get_db
 from backend.auth import seed_default_users, get_user_from_token_str
@@ -52,7 +55,7 @@ def warmup_models():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Production security check
+    # JWT security check: in production, refuse startup; in dev/test, warn only
     insecure_placeholders = {
         "",
         "your_jwt_secret_here",
@@ -62,10 +65,17 @@ async def lifespan(app: FastAPI):
         "secret",
     }
     if not JWT_SECRET or JWT_SECRET.strip() in insecure_placeholders:
-        raise RuntimeError(
-            "FATAL: Insecure or missing JWT_SECRET. "
-            "Please generate a secure secret using `python scripts/setup.py` or set JWT_SECRET in .env."
-        )
+        if APP_ENV == "production":
+            raise RuntimeError(
+                "FATAL: Insecure or missing JWT_SECRET in production. "
+                "Please generate a secure secret using `python scripts/setup.py` or set JWT_SECRET in .env."
+            )
+        else:
+            print("[startup WARNING] Insecure or missing JWT_SECRET detected. In APP_ENV=production this will refuse startup.")
+
+    # Admin credentials startup check
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        print("[startup INFO] ADMIN_EMAIL or ADMIN_PASSWORD not configured. Initial admin account seeding skipped.")
 
     # Missing GROQ_API_KEY: warning on startup
     if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":

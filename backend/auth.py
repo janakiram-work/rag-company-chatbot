@@ -123,14 +123,17 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 def seed_default_users(db: Session):
     """Seed the admin from ADMIN_EMAIL and ADMIN_PASSWORD only if no admin exists."""
-    existing_admin = db.query(User).filter(User.role == "admin").first()
-    if not existing_admin:
-        admin_user = User(
-            email=ADMIN_EMAIL,
-            password_hash=get_password_hash(ADMIN_PASSWORD),
-            role="admin",
-        )
-        db.add(admin_user)
+    if ADMIN_EMAIL and ADMIN_PASSWORD:
+        existing_admin = db.query(User).filter(User.role == "admin").first()
+        if not existing_admin:
+            admin_user = User(
+                email=ADMIN_EMAIL,
+                password_hash=get_password_hash(ADMIN_PASSWORD),
+                role="admin",
+            )
+            db.add(admin_user)
+    else:
+        print("[startup INFO] ADMIN_EMAIL or ADMIN_PASSWORD not configured. Initial admin account seeding skipped.")
 
     # Check Regular User (used for testing and baseline user access)
     user_email = "user@abctechnologies.com"
