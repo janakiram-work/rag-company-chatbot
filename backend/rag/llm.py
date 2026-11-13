@@ -56,6 +56,10 @@ async def stream_conversation_answer(
         messages.append({"role": role, "content": m.get("content", "")})
     messages.append({"role": "user", "content": query})
 
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        yield f"Hello! I am the {COMPANY_NAME} Assistant. The Groq API key is not configured, so AI responses are offline."
+        return
+
     try:
         client = AsyncGroq(api_key=GROQ_API_KEY)
         stream = await client.chat.completions.create(
@@ -97,6 +101,10 @@ async def stream_document_answer(
         f"\"{NOT_FOUND_MESSAGE}\""
     )
     messages.append({"role": "user", "content": user_query_content})
+
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        yield "The Groq API key is not configured on the server. Please set GROQ_API_KEY in the server .env to enable AI answers."
+        return
 
     try:
         client = AsyncGroq(api_key=GROQ_API_KEY)
@@ -163,6 +171,10 @@ async def stream_visual_answer(
     messages.append({"role": "user", "content": user_content})
 
     collected_tokens = []
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        yield fallback_template
+        return
+
     try:
         client = AsyncGroq(api_key=GROQ_API_KEY)
         stream = await client.chat.completions.create(

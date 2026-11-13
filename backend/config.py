@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+# Server Config
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("true", "1", "yes")
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("true", "1", "yes")
+
 # Company Branding
 COMPANY_NAME = os.getenv("COMPANY_NAME", "ABC Technologies")
 
@@ -25,16 +31,27 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@abctechnologies.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin@123")
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://127.0.0.1:8001").split(",")
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001").split(",")
     if origin.strip()
 ]
 
-# Database & Storage
+# Storage & Paths
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR)))
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'rag_company.db'}")
-CHROMA_PERSIST_DIR = str(BASE_DIR / os.getenv("CHROMA_PERSIST_DIR", "chroma_data"))
-UPLOAD_DIR = str(BASE_DIR / os.getenv("UPLOAD_DIR", "uploads"))
-IMAGES_DIR = os.path.join(UPLOAD_DIR, "images")
+
+_chroma_env = os.getenv("CHROMA_DIR", os.getenv("CHROMA_PERSIST_DIR", "chroma_data"))
+CHROMA_PERSIST_DIR = str(BASE_DIR / _chroma_env if not Path(_chroma_env).is_absolute() else Path(_chroma_env))
+CHROMA_DIR = CHROMA_PERSIST_DIR
+
+_upload_env = os.getenv("UPLOAD_DIR", "uploads")
+UPLOAD_DIR = str(BASE_DIR / _upload_env if not Path(_upload_env).is_absolute() else Path(_upload_env))
+
+_log_env = os.getenv("LOG_DIR", "logs")
+LOG_DIR = str(BASE_DIR / _log_env if not Path(_log_env).is_absolute() else Path(_log_env))
+
 DOCS_DIR = os.path.join(UPLOAD_DIR, "docs")
+IMAGES_DIR = os.path.join(UPLOAD_DIR, "images")
+RENDERED_PAGES_DIR = os.path.join(UPLOAD_DIR, "rendered_pages")
 DEMO_DIR = str(BASE_DIR / "demo")
 
 # Embedding & Retrieval
@@ -54,7 +71,9 @@ MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 # Ensure directories exist
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(IMAGES_DIR, exist_ok=True)
 os.makedirs(DOCS_DIR, exist_ok=True)
+os.makedirs(IMAGES_DIR, exist_ok=True)
+os.makedirs(RENDERED_PAGES_DIR, exist_ok=True)
 os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(DEMO_DIR, exist_ok=True)

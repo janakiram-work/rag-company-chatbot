@@ -3,11 +3,12 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-LOGS_DIR = BASE_DIR / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
+from backend.config import LOG_DIR
+
+LOGS_DIR = Path(LOG_DIR)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOGS_DIR / "app.log"
 
 logger = logging.getLogger("rag_assistant")

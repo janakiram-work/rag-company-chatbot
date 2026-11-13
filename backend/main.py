@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Query, Header, Depends, Request, Res
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from slowapi.errors import RateLimitExceeded
 
@@ -13,7 +14,19 @@ import threading
 import uuid
 import time
 import jwt
-from backend.config import IMAGES_DIR, DOCS_DIR, COMPANY_NAME, ALLOWED_ORIGINS, JWT_SECRET, JWT_ALGORITHM
+from backend.config import (
+    IMAGES_DIR,
+    DOCS_DIR,
+    RENDERED_PAGES_DIR,
+    CHROMA_PERSIST_DIR,
+    LOG_DIR,
+    COMPANY_NAME,
+    ALLOWED_ORIGINS,
+    JWT_SECRET,
+    JWT_ALGORITHM,
+    DEMO_MODE,
+    GROQ_API_KEY,
+)
 from backend.database import init_db, SessionLocal, Document, get_db
 from backend.auth import seed_default_users, get_user_from_token_str
 from backend.rate_limiter import limiter
@@ -39,6 +52,32 @@ def warmup_models():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Production security check
+    insecure_placeholders = {
+        "",
+        "your_jwt_secret_here",
+        "your_jwt_secret_here_generate_with_setup_script",
+        "change-me",
+        "changeme",
+        "secret",
+    }
+    if not JWT_SECRET or JWT_SECRET.strip() in insecure_placeholders:
+        raise RuntimeError(
+            "FATAL: Insecure or missing JWT_SECRET. "
+            "Please generate a secure secret using `python scripts/setup.py` or set JWT_SECRET in .env."
+        )
+
+    # Missing GROQ_API_KEY: warning on startup
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        print("[startup WARNING] GROQ_API_KEY is not configured. AI chat answers will fall back to offline notices.")
+
+    # Safely ensure required directories exist
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+    os.makedirs(RENDERED_PAGES_DIR, exist_ok=True)
+    os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
+
     # Initialize DB schema
     init_db()
     with SessionLocal() as db:
@@ -199,17 +238,46 @@ def get_app_config():
     return {
         "company_name": COMPANY_NAME,
         "assistant_intro": "I can answer questions about the company documents you have access to.",
+        "demo_mode": DEMO_MODE,
+    }
+
+
+def check_system_health():
+    db_status = "ok"
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+
+    vector_status = "ok"
+    try:
+        from backend.rag.vector_store import get_chroma_collection
+        coll = get_chroma_collection()
+        _ = coll.count()
+    except Exception as e:
+        vector_status = f"error: {str(e)}"
+
+    llm_configured = bool(GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here")
+    is_healthy = (db_status == "ok" and vector_status == "ok")
+
+    return {
+        "status": "healthy" if is_healthy else "degraded",
+        "service": f"{COMPANY_NAME} RAG Backend",
+        "database": db_status,
+        "vector_store": vector_status,
+        "llm_configured": llm_configured,
     }
 
 
 @app.get("/health")
 def health_check_root():
-    return {"status": "healthy", "service": f"{COMPANY_NAME} RAG Backend"}
+    return check_system_health()
 
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "healthy", "service": f"{COMPANY_NAME} RAG Backend"}
+    return check_system_health()
 
 
 # Serve Built React Frontend

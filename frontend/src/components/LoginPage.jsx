@@ -9,6 +9,18 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
   const [countdown, setCountdown] = useState(0);
+  const [demoMode, setDemoMode] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then((res) => res.json())
+      .then((cfg) => {
+        if (cfg && cfg.demo_mode) {
+          setDemoMode(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (initialError) {
@@ -88,30 +100,32 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
           </p>
         </div>
 
-        {/* Demo Quick Logins */}
-        <div className="mb-6 p-3 bg-gray-50 dark:bg-zinc-800/60 rounded-xl border border-gray-200/80 dark:border-zinc-700/60">
-          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-2">
-            Quick Demo Accounts
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => fillCredentials('admin@abctechnologies.com', 'Admin@123')}
-              className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 transition"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Admin (Full Access)
-            </button>
-            <button
-              type="button"
-              onClick={() => fillCredentials('user@abctechnologies.com', 'User@123')}
-              className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 hover:bg-blue-200 transition"
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              Regular User
-            </button>
+        {/* Demo Quick Logins (only shown when DEMO_MODE=true) */}
+        {demoMode && (
+          <div className="mb-6 p-3 bg-gray-50 dark:bg-zinc-800/60 rounded-xl border border-gray-200/80 dark:border-zinc-700/60">
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider block mb-2">
+              Quick Demo Accounts
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => fillCredentials('admin@abctechnologies.com', 'Admin@123')}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 transition"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Admin (Full Access)
+              </button>
+              <button
+                type="button"
+                onClick={() => fillCredentials('user@abctechnologies.com', 'User@123')}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 hover:bg-blue-200 transition"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                Regular User
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Error Notification */}
         {error && (

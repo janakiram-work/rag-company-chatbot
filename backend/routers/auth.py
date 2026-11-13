@@ -16,6 +16,7 @@ from backend.config import (
     REFRESH_TOKEN_EXPIRE_DAYS,
     JWT_SECRET,
     JWT_ALGORITHM,
+    COOKIE_SECURE,
 )
 from backend.rate_limiter import (
     limiter,
@@ -35,7 +36,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=COOKIE_SECURE,
         path="/",
     )
     response.set_cookie(
@@ -44,7 +45,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=COOKIE_SECURE,
         path="/",
     )
 
@@ -177,7 +178,7 @@ def refresh_token(
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=COOKIE_SECURE,
         path="/",
     )
 
