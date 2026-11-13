@@ -1,6 +1,6 @@
 # ABC Technologies Enterprise RAG Assistant
 
-A production-style Retrieval-Augmented Generation (RAG) multimodal company chatbot built from scratch.
+A production-ready Retrieval-Augmented Generation (RAG) multimodal enterprise chatbot built with FastAPI, SQLite/PostgreSQL, ChromaDB, and React.
 
 ---
 
@@ -37,17 +37,13 @@ A production-style Retrieval-Augmented Generation (RAG) multimodal company chatb
 7. **Multimodal Image Matching & Homography Highlighting (`FIND_IMAGE`)**:
    - **Hybrid Matching Pipeline**:
      - **Perceptual Hash (`imagehash.phash`)**: Fast Hamming distance comparison for exact or nearly-identical images.
-     - **OpenCV SIFT & RANSAC Homography**: Detects cropped, scaled, or rotated sub-images embedded inside documents or larger canvas layouts (Lowe ratio 0.75, minimum inliers threshold).
+     - **OpenCV SIFT & RANSAC Homography**: Detects cropped, scaled, or rotated sub-images embedded inside documents or larger canvas layouts.
      - **OCR Token Jaccard**: Text overlap comparison for text-dense diagrams or forms.
      - In-memory `(filepath, mtime)` caching for hashes and SIFT descriptors; images downscaled to max 1200 px for low CPU/memory footprint.
    - **Visual Bounding Box Highlighting**: RANSAC homography projects the query outline onto the candidate page/image and saves a highlighted rendering with a red border and semi-transparent overlay.
    - **Pairwise Comparison**: Syntax like *"is picture 1 in picture 2"* compares attached images directly.
-   - **Answer Formatting**: If confidence >= `IMAGE_MATCH_MIN_CONFIDENCE`, returns `"Yes, this picture appears in <file>, page <n> (confidence <x>%) [signal: <signal>]"` up to 3 matches. Below threshold: `"I couldn't find a matching image in the attached documents."`
-   - **Configurable Settings in `.env`**: `IMAGE_HASH_MAX_DISTANCE` (default 12), `SIFT_MIN_INLIERS` (default 10), `IMAGE_MATCH_MIN_CONFIDENCE` (default 70.0).
-8. **Image Description & Screenshot QA (`DESCRIBE_IMAGE` & RAG)**:
-   - **DESCRIBE_IMAGE**: Returns extracted EasyOCR text and captions. If `VISION_MODEL` (e.g., `meta-llama/llama-4-scout-17b-16e-instruct`) is configured in `.env`, synthesizes a concise 1-2 sentence Groq vision description with graceful fallback to OCR.
-   - **Screenshot & Diagram RAG**: General questions regarding image content (e.g. *"What does Task 1 say?"*) are indexed into Chroma and answered via standard RAG.
-9. **Role-Based Access Control (RBAC)**:
+   - **Answer Formatting**: If confidence $\ge$ `IMAGE_MATCH_MIN_CONFIDENCE`, returns `"Yes, this picture appears in <file>, page <n> (confidence <x>%)"`. Below threshold: `"I couldn't find a matching image in the attached documents."`
+8. **Role-Based Access Control (RBAC)**:
    - **Admin**:
      - System stats (Users, Company Docs, Vector Chunks, Messages, Storage).
      - Company Knowledge Base manager (upload and delete with cascade).
@@ -67,11 +63,11 @@ A production-style Retrieval-Augmented Generation (RAG) multimodal company chatb
                       │          React + Tailwind Frontend           │
                       │  (ChatGPT-style UI, Dark/Light Mode, SSE)    │
                       └───────┬──────────────────────────────┬───────┘
-                              │ REST APIs (Auth, Docs, Admin)│ SSE Stream (/chat)
+                              │ REST APIs (Auth, Docs, Admin)│ SSE Stream (/messages)
                               ▼                              ▼
                       ┌──────────────────────────────────────────────┐
                       │             FastAPI Backend                  │
-                      ├──────────────────────────────────────────────┤
+                      ├────────────────────────────────────────┤
                       │  - JWT Bearer Auth & RBAC (Admin / User)     │
                       │  - Multi-Format Extractor (PDF, DOCX, TXT,   │
                       │    PNG, JPG) with Magic Bytes & OCR          │
@@ -95,7 +91,7 @@ A production-style Retrieval-Augmented Generation (RAG) multimodal company chatb
 
 ## 🔑 Default User Accounts (Auto-Seeded)
 
-The database automatically seeds default accounts on startup if no admin exists (configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`):
+The database automatically seeds default accounts on initial startup if no admin exists (configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`):
 
 | Role | Email | Password | Permissions |
 |---|---|---|---|
@@ -109,90 +105,167 @@ The database automatically seeds default accounts on startup if no admin exists 
 ## 🔒 Security Hardening
 
 - **Cookie-Based Authentication**: JWT access token (30 min) and refresh token (7 days) stored in `httpOnly`, `SameSite=Lax` cookies with `credentials: 'include'` support, plus backward-compatible `Bearer` header support.
-- **Token Refresh & Logout**: `POST /api/auth/refresh` silently renews access tokens on expiry; `POST /api/auth/logout` clears both auth cookies. Image and file viewing uses authenticated cookies without `?token=` query parameters.
+- **Configurable `COOKIE_SECURE`**: Toggleable via `COOKIE_SECURE=true` behind HTTPS or `false` for local plain HTTP.
+- **Token Refresh & Logout**: `POST /api/auth/refresh` silently renews access tokens on expiry; `POST /api/auth/logout` clears both auth cookies.
 - **SlowAPI Rate Limiting & Failed Login Protection**:
   - `POST /api/auth/login`: 10 failed attempts / min keyed by client IP + email (successful logins do not count; returns `Retry-After` and displays a live countdown in the UI).
   - `POST /api/conversations/{id}/messages`: 30 requests / min per user.
   - `POST /api/documents/upload`: 10 requests / min per user.
-  - Exceeded rate limits return a friendly 429 response displayed gracefully in the UI.
 - **Message Feedback & Analytics**:
   - User feedback on assistant answers via thumbs up / thumbs down (`POST /api/messages/{id}/feedback`) with optional comment modal on dislike.
-  - Admin Analytics console (`GET /api/admin/analytics`, RBAC-protected): summary cards (total questions, thumbs-up %, thumbs-down count, "not found" rate, average latency), 14-day daily message volume chart, top 10 user questions, missing documents list, and thumbs-down audits.
-  - Latency tracking: assistant message generation time recorded in `latency_ms`.
+  - Admin Analytics console (`GET /api/admin/analytics`, RBAC-protected): summary metrics (total questions, thumbs-up %, thumbs-down count, "not found" rate, average latency), 14-day daily message volume chart, top user questions, missing documents list, and thumbs-down audits.
 - **Structured Logging**:
   - Structured request and LLM latency logging to `logs/app.log` via a `RotatingFileHandler` with unique `X-Request-ID` tracking. Never logs credentials, tokens, or cookies.
-- **CORS & Headers**: Strict CORS origin validation using `ALLOWED_ORIGINS` (default `http://127.0.0.1:8000,http://127.0.0.1:8001`), standard security headers (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`), and a `GET /health` endpoint.
+- **CORS & Headers**: Strict CORS origin validation using `ALLOWED_ORIGINS`, standard security headers (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`), and a detailed health check at `GET /health` (`status`, `database`, `vector_store`, `llm_configured`).
 
 ---
 
-## 🚀 Quickstart & Run Steps
+## Deploy on a server
+
+This guide walks through deploying the Enterprise RAG Assistant on a fresh server running **Linux (Ubuntu/Debian/RHEL)** or **Windows Server**.
 
 ### 1. Prerequisites
-- **Python 3.10+** (Virtual environment configured in `venv/`)
-- **Node.js LTS** (Installed at `$env:LOCALAPPDATA\Programs\nodejs` or system PATH)
-- Valid `GROQ_API_KEY` in `.env`
+- **Operating System**: Linux (Ubuntu 22.04 LTS / Debian 12 recommended) or Windows 10 / 11 / Server 2022.
+- **Python**: **Python 3.11** (specified in `.python-version`; 3.10–3.14 compatible).
+- **RAM**: Minimum 4 GB RAM (8 GB recommended for sentence embeddings & EasyOCR).
+- **Disk Space**: At least 10 GB free space for packages, models, and uploads.
+- **Node.js LTS**: Only required if you intend to rebuild the frontend assets from `frontend/src`. The production build is pre-compiled and tracked inside `frontend/dist/`, so Node.js is **not required** on the deployment server for standard installations.
+- **Groq API Key**: A valid API key from [Groq Cloud Console](https://console.groq.com/). Groq is the only third-party LLM provider used by the system.
 
-### 2. Reset / Initialize Clean Data
-To reset all data (SQLite database, ChromaDB vectors, and uploaded documents/images) and seed default users:
-```powershell
-.\venv\Scripts\python.exe scripts/reset_data.py
-```
-
-### 3. Start the Application
-Run the unified FastAPI server which serves both the REST API and the pre-built React SPA:
-```powershell
-$env:PYTHONPATH = "."; .\venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
-Open **`http://localhost:8000`** in your browser.
-
----
-
-## 🐳 Production Deployment
-
-### 1. Docker Compose (Multi-Stage Build + PostgreSQL)
-
-The project includes a multi-stage `Dockerfile` (Node 20 builds frontend, Python 3.11 runs FastAPI) and `docker-compose.yml` orchestrating FastAPI with a healthchecked PostgreSQL database:
+### 2. Linux Server Deployment (Ubuntu / Debian)
 
 ```bash
-# Build and start services in background
-docker compose up -d --build
+# Update system packages and install Python 3.11 prerequisites
+sudo apt-get update && sudo apt-get install -y python3.11 python3.11-venv python3-pip git curl libgl1 libglib2.0-0
+
+# Clone repository
+git clone <repository_url> new_chatbot_prod
+cd new_chatbot_prod
+
+# Create and activate virtual environment
+python3.11 -m venv venv
+source venv/bin/activate
+
+# Install runtime dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Run automated setup script (creates .env with cryptographically secure JWT secret)
+python scripts/setup.py
+
+# Pre-download and cache embedding and OCR models (optional, prevents first-request delay)
+python scripts/download_models.py
 ```
 
-### 2. Environment Variables & Database Configuration
+### 3. Windows Server Deployment
 
-Set variables in your production `.env` file:
-- `DATABASE_URL`: `postgresql://rag_user:rag_password@postgres:5432/rag_company` (or `sqlite:///./rag_company.db`)
-- `USE_HYBRID`: Set to `true` to enable BM25 + Vector hybrid retrieval with Reciprocal Rank Fusion ($k=60$).
-- `USE_RERANKER`: Set to `true` to enable lazy CrossEncoder (`BAAI/bge-reranker-base`) reranking.
-- `JWT_SECRET`: Random 256-bit production secret string.
-- `ALLOWED_ORIGINS`: Comma-separated list of allowed web origins (e.g. `https://rag.abctechnologies.com`).
+```powershell
+# Clone repository
+git clone <repository_url> new_chatbot_prod
+cd new_chatbot_prod
 
-### 3. Persistent Volumes
+# Create virtual environment
+python -m venv venv
+.\venv\Scripts\activate
 
-Docker compose mounts named persistent volumes:
-- `postgres_data`: PostgreSQL relational database files.
-- `chroma_data`: Persistent ChromaDB vector collections.
-- `uploads`: Uploaded user documents and extracted visual figures.
-- `logs`: Application rotation logs (`logs/app.log`).
+# Install runtime dependencies
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
-### 4. Health Checks & Monitoring
+# Run automated setup script
+python scripts/setup.py
 
-- **Container Health**: Built-in healthcheck for PostgreSQL (`pg_isready`) and HTTP health probe at `GET /health` and `GET /api/health` returning `{"status": "healthy"}`.
-- **Structured Logs**: Inspected via `docker compose logs -f app` or in `logs/app.log`.
+# Pre-download models
+python scripts/download_models.py
+```
 
-### 5. Production HTTPS Behind Nginx
+### 4. Configuration: Every `.env` Variable Explained
 
-For production deployments, terminate TLS/HTTPS behind an Nginx reverse proxy:
+Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRET`. Edit `.env` to configure your environment:
+
+| Variable | Default Value | Description & Purpose |
+|---|---|---|
+| `HOST` | `0.0.0.0` | Network binding interface (`0.0.0.0` listens on all interfaces; `127.0.0.1` for local-only/reverse proxy). |
+| `PORT` | `8000` | HTTP listening port. |
+| `COOKIE_SECURE` | `false` | Set to `true` behind HTTPS/SSL. Leave `false` when accessing via plain HTTP or during local IP testing. |
+| `DEMO_MODE` | `false` | When `true`, shows quick-demo login buttons on the login page. Keep `false` in production. |
+| `ALLOWED_ORIGINS` | `http://127.0.0.1:8000,...` | Comma-separated list of allowed CORS web origins (e.g. `https://rag.abctechnologies.com`). |
+| `COMPANY_NAME` | `ABC Technologies` | Company branding displayed in the UI and assistant system prompt. |
+| `GROQ_API_KEY` | *(Required)* | Groq API Key (`gsk_...`). All chat answers and LLM logic route through Groq. |
+| `GROQ_MODEL` | `qwen/qwen3.8-27b` | Primary Groq model used for RAG document answering and conversational turns. |
+| `GROQ_FAST_MODEL`| `openai/gpt-oss-20b` | Fast Groq model for intent routing and title generation. |
+| `VISION_MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq vision model for image descriptions. |
+| `LLM_TEMPERATURE`| `0.2` | Generation temperature for document answers (low temperature minimizes hallucinations). |
+| `JWT_SECRET` | *(Random 48-byte string)* | Cryptographic secret for signing JWT access and refresh tokens. Startup will refuse default placeholders. |
+| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access token lifespan in minutes. |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifespan in days. |
+| `ADMIN_EMAIL` | `admin@abctechnologies.com` | Initial admin account email seeded on first startup. |
+| `ADMIN_PASSWORD` | `Admin@123` | Initial admin password seeded on first startup. |
+| `DATABASE_URL` | `sqlite:///./rag_company.db` | SQLAlchemy connection URL (`sqlite:///./rag_company.db` or PostgreSQL `postgresql://user:pass@host:5432/dbname`). |
+| `CHROMA_DIR` | `chroma_data` | Directory for persistent ChromaDB vector store. |
+| `UPLOAD_DIR` | `uploads` | Root directory for stored documents, images, and rendered pages. |
+| `LOG_DIR` | `logs` | Directory for rotating application request and latency logs. |
+| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Hugging Face embedding model name. |
+| `SIMILARITY_THRESHOLD` | `0.35` | Cosine similarity threshold for company scope. Below this, answers trigger out-of-context fallback. |
+| `TOP_K_CHUNKS` | `5` | Maximum number of vector chunks passed into context prompt. |
+| `USE_HYBRID` | `false` | Enable BM25 keyword search blended with vector search via Reciprocal Rank Fusion ($k=60$). |
+| `USE_RERANKER` | `false` | Enable cross-encoder reranking over retrieved candidate chunks. |
+| `IMAGE_HASH_MAX_DISTANCE` | `12` | Max Hamming distance for perceptual hash visual matching. |
+| `SIFT_MIN_INLIERS` | `15` | Minimum homography inliers for OpenCV SIFT sub-image match. |
+| `IMAGE_MATCH_MIN_CONFIDENCE` | `0.40` | Minimum confidence score to assert a positive visual match. |
+
+### 5. Starting the Server
+
+- **Linux**:
+  ```bash
+  chmod +x run.sh
+  ./run.sh
+  ```
+- **Windows**:
+  ```cmd
+  run.bat
+  ```
+
+### 6. Opening Firewall Ports
+
+- **Ubuntu (UFW)**:
+  ```bash
+  # Open direct app port (if not using reverse proxy)
+  sudo ufw allow 8000/tcp
+  # Open HTTP and HTTPS for Nginx
+  sudo ufw allow 80/tcp
+  sudo ufw allow 443/tcp
+  sudo ufw reload
+  ```
+- **Windows Firewall**:
+  ```powershell
+  New-NetFirewallRule -DisplayName "Enterprise RAG Chatbot" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+  ```
+
+### 7. Nginx Reverse Proxy with HTTPS & SSE Buffering Configuration
+
+For production HTTPS, place FastAPI behind an Nginx reverse proxy. SSE streaming requires disabling proxy buffering:
 
 ```nginx
+# /etc/nginx/sites-available/rag.conf
+server {
+    listen 80;
+    server_name rag.abctechnologies.com;
+    return 301 https://$host$request_uri;
+}
+
 server {
     listen 443 ssl http2;
     server_name rag.abctechnologies.com;
 
     ssl_certificate /etc/letsencrypt/live/rag.abctechnologies.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/rag.abctechnologies.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 
-    # Secure cookies note: When serving over HTTPS, set secure=True in auth cookies
+    client_max_body_size 25M;
+
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -200,7 +273,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
 
-        # SSE Streaming support
+        # CRITICAL for SSE Streaming:
         proxy_set_header Connection '';
         proxy_http_version 1.1;
         chunked_transfer_encoding off;
@@ -210,11 +283,112 @@ server {
 }
 ```
 
+> **IMPORTANT**: When serving behind HTTPS, set `COOKIE_SECURE=true` in your `.env` so cookies are transmitted only over encrypted connections.
+
+### 8. Systemd Service Configuration (Linux)
+
+Create a systemd unit file at `/etc/systemd/system/rag-chatbot.service`:
+
+```ini
+[Unit]
+Description=Enterprise RAG Chatbot Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/new_chatbot_prod
+EnvironmentFile=/home/ubuntu/new_chatbot_prod/.env
+ExecStart=/home/ubuntu/new_chatbot_prod/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable rag-chatbot
+sudo systemctl start rag-chatbot
+sudo systemctl status rag-chatbot
+```
+
+### 9. Backup and Restore Procedures
+
+The state of the chatbot consists of three directories:
+1. **Relational Database**: `rag_company.db` (SQLite) or PostgreSQL database.
+2. **ChromaDB Vector Store**: `chroma_data/` directory.
+3. **Uploaded Documents and Figures**: `uploads/` directory.
+
+#### Backup:
+```bash
+# SQLite backup using safe online vacuum/backup
+sqlite3 rag_company.db ".backup 'backups/rag_company_$(date +%F).db'"
+
+# Backup uploads and vector embeddings
+tar -czf "backups/uploads_$(date +%F).tar.gz" uploads/
+tar -czf "backups/chroma_$(date +%F).tar.gz" chroma_data/
+```
+
+#### Restore:
+```bash
+# Stop application service
+sudo systemctl stop rag-chatbot
+
+# Restore database and storage files
+cp backups/rag_company_2026-11-13.db rag_company.db
+tar -xzf backups/uploads_2026-11-13.tar.gz
+tar -xzf backups/chroma_2026-11-13.tar.gz
+
+# Restart application service
+sudo systemctl start rag-chatbot
+```
+
+### 10. Upgrade Instructions
+
+To apply new code versions without losing data:
+```bash
+cd new_chatbot_prod
+
+# Fetch new code
+git pull origin master
+
+# Update dependencies
+./venv/bin/pip install -r requirements.txt
+
+# Run any database migrations
+./venv/bin/alembic upgrade head
+
+# Restart service
+sudo systemctl restart rag-chatbot
+```
+
+### 11. Troubleshooting Guide
+
+| Issue / Symptom | Possible Root Cause | Resolution |
+|---|---|---|
+| **Port already in use (`Errno 98` or `WinError 10048`)** | Another process or old uvicorn worker is bound to port 8000. | Check running processes: `lsof -i :8000` (Linux) or `netstat -ano \| findstr 8000` (Windows). Terminate the conflicting process or change `PORT=8002` in `.env`. |
+| **Model download blocked or slow** | Firewall or network blocking connection to `huggingface.co`. | Run `python scripts/download_models.py` manually with proxy settings `HTTP_PROXY`/`HTTPS_PROXY` configured, or pre-populate the Hugging Face cache in `~/.cache/huggingface/hub`. |
+| **Groq 429 & Rate Limit Reached** | Groq API hourly or daily token limits exceeded. Groq is the only third-party LLM provider. | The application catches Groq rate limits gracefully and returns a polite delay notification instead of a 500 error. Check usage at [Groq Console](https://console.groq.com/settings/limits) or request higher rate limits. |
+| **Login fails on plain HTTP (`COOKIE_SECURE=true`)** | Modern browsers discard `Secure` cookies when accessed over unencrypted `http://`. | Set `COOKIE_SECURE=false` in `.env` whenever testing without an SSL/TLS certificate. |
+| **Blank frontend page** | Pre-built SPA assets missing from `frontend/dist/`. | Verify `frontend/dist/index.html` and `frontend/dist/assets/` exist. If rebuilding frontend is desired, install Node.js and run `cd frontend && npm install && npm run build`. |
+| **Permission Denied (`EACCES` / `Errno 13`)** | Application process does not have write permissions for storage directories. | Ensure the user running the service owns `uploads/`, `chroma_data/`, and `logs/`: `sudo chown -R $USER:$USER uploads chroma_data logs`. |
+| **Missing Environment Variables on Startup** | `.env` file does not exist or lacks `JWT_SECRET`. | Run `python scripts/setup.py` to auto-generate `.env` from template with a cryptographically secure random secret. |
+
 ---
 
-## 🧪 Testing
+## 🧪 Automated Testing
 
-All tests run against isolated temporary databases and vector storage without touching production data:
-```powershell
-$env:PYTHONIOENCODING = "utf-8"; .\venv\Scripts\pytest.exe tests/ -v
+### Smoke Tests
+Execute the end-to-end automated smoke test against a running instance:
+```bash
+python scripts/smoke_test.py --url http://127.0.0.1:8000
+```
+
+### Pytest Unit & Integration Tests
+Run the automated pytest suite (all tests run in an isolated temporary environment without touching production data):
+```bash
+pytest -q
 ```
