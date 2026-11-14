@@ -58,25 +58,11 @@ from backend.database import (
 
 logger = logging.getLogger("prune_users")
 
-
-def get_chroma_collection_safe(chroma_dir: Optional[str]):
-    """Safely connect to Chroma collection if available."""
-    if not chroma_dir or not os.path.exists(chroma_dir):
-        return None
-    try:
-        import chromadb
-        from chromadb.config import Settings
-        client = chromadb.PersistentClient(
-            path=str(chroma_dir),
-            settings=Settings(anonymized_telemetry=False, is_persistent=True),
-        )
-        return client.get_or_create_collection(
-            name="rag_documents",
-            metadata={"hnsw:space": "cosine"},
-        )
-    except Exception as e:
-        logger.warning(f"Could not initialize Chroma client at {chroma_dir}: {e}")
-        return None
+from backend.user_cleanup import (
+    get_chroma_collection_safe,
+    delete_chroma_vectors_for_doc as delete_doc_vectors,
+    resolve_file_location as resolve_document_filepath,
+)
 
 
 def get_doc_vector_count(collection, doc_id: str) -> int:
@@ -90,20 +76,6 @@ def get_doc_vector_count(collection, doc_id: str) -> int:
         return 0
 
 
-def delete_doc_vectors(collection, doc_id: str) -> int:
-    """Delete all vector chunks for a doc_id in Chroma."""
-    if collection is None:
-        return 0
-    try:
-        count = get_doc_vector_count(collection, doc_id)
-        if count > 0:
-            collection.delete(where={"doc_id": str(doc_id)})
-        return count
-    except Exception as e:
-        logger.warning(f"Failed to delete Chroma vectors for doc {doc_id}: {e}")
-        return 0
-
-
 def backup_sqlite_db(db_file_path: str, backup_dir: str = "backups") -> Optional[str]:
     """Create a timestamped backup copy of SQLite database file."""
     if not db_file_path or not os.path.isfile(db_file_path):
@@ -113,7 +85,6 @@ def backup_sqlite_db(db_file_path: str, backup_dir: str = "backups") -> Optional
     stem = Path(db_file_path).stem
     backup_file = os.path.join(backup_dir, f"{stem}_backup_{timestamp}.db")
 
-    # Use SQLite online backup API if available for consistency
     try:
         import sqlite3
         src = sqlite3.connect(db_file_path)
@@ -126,31 +97,6 @@ def backup_sqlite_db(db_file_path: str, backup_dir: str = "backups") -> Optional
         shutil.copy2(db_file_path, backup_file)
 
     return backup_file
-
-
-def resolve_document_filepath(
-    doc_id: str,
-    doc_filename: str,
-    stored_filepath: Optional[str],
-    upload_dir: str,
-) -> Optional[str]:
-    """Resolve the physical location of a document file on disk."""
-    if stored_filepath and os.path.exists(stored_filepath):
-        return stored_filepath
-    docs_dir = os.path.join(upload_dir, "docs")
-    if stored_filepath:
-        fname = Path(stored_filepath).name
-        c1 = os.path.join(docs_dir, fname)
-        if os.path.exists(c1):
-            return c1
-    c2 = os.path.join(docs_dir, f"{doc_id}_{doc_filename}")
-    if os.path.exists(c2):
-        return c2
-    if stored_filepath:
-        c3 = os.path.join(upload_dir, Path(stored_filepath).name)
-        if os.path.exists(c3):
-            return c3
-    return None
 
 
 def resolve_sqlite_path(db_url: str) -> Optional[str]:

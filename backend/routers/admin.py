@@ -45,6 +45,8 @@ from backend.rag.llm import NOT_FOUND_MESSAGE, invalidate_query_cache
 from backend.config import UPLOAD_DIR, BUILD_VERSION, BRANDING_DIR
 from backend.concurrency import get_active_streams
 from backend.logger import get_last_error_logs
+from backend.events import publish_event
+from backend.user_cleanup import delete_user_permanently
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"], dependencies=[Depends(require_admin)])
 
@@ -113,11 +115,14 @@ def delete_company_document(document_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.get("/users", response_model=List[AdminUserDetail])
+@router.get("/users")
 def list_all_users(
     q: Optional[str] = None,
-    page: int = Query(1, ge=1),
+    page: Optional[int] = Query(None, ge=1),
+    skip: Optional[int] = Query(None, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    role: Optional[str] = None,
+    status: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     query = db.query(User)
@@ -130,7 +135,27 @@ def list_all_users(
                 func.lower(User.display_name).like(term),
             )
         )
-    users = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    if role and role.strip():
+        query = query.filter(User.role == role.strip())
+    if status and status.strip():
+        if status.lower() == "active":
+            query = query.filter(User.is_active.is_(True))
+        elif status.lower() in ("disabled", "inactive"):
+            query = query.filter(User.is_active.is_(False))
+
+    total = query.count()
+
+    if skip is not None:
+        offset = skip
+        curr_page = (skip // limit) + 1
+    elif page is not None:
+        offset = (page - 1) * limit
+        curr_page = page
+    else:
+        offset = 0
+        curr_page = 1
+
+    users = query.order_by(User.created_at.desc()).offset(offset).limit(limit).all()
     results = []
     for u in users:
         chat_count = db.query(Conversation).filter(Conversation.user_id == u.id).count()
@@ -151,7 +176,14 @@ def list_all_users(
                 doc_count=doc_count,
             )
         )
-    return results
+
+    return {
+        "items": results,
+        "total": total,
+        "page": curr_page,
+        "limit": limit,
+        "skip": offset,
+    }
 
 
 @router.post("/users", response_model=AdminUserDetail)
@@ -195,6 +227,7 @@ def admin_create_user(
     db.refresh(new_user)
 
     log_audit(db, current_admin.id, "user_created_by_admin", target=new_user.email, details=f"Role: {role}")
+    publish_event("user_changed", {"action": "created", "user_id": new_user.id, "email": new_user.email}, target_roles=["admin"])
 
     return AdminUserDetail(
         id=new_user.id,
@@ -257,6 +290,9 @@ def admin_update_user(
     db.refresh(target)
 
     log_audit(db, current_admin.id, "user_updated_by_admin", target=target.email, details="; ".join(changes))
+    publish_event("user_changed", {"action": "updated", "user_id": target.id, "email": target.email}, target_roles=["admin"])
+    if target.is_active is False:
+        publish_event("session_invalidated", {"reason": "Your account has been deactivated by an administrator."}, target_user_ids=[target.id])
 
     chat_count = db.query(Conversation).filter(Conversation.user_id == target.id).count()
     doc_count = db.query(Document).filter(Document.owner_id == target.id).count()
@@ -292,15 +328,26 @@ def admin_force_password_reset(
     db.commit()
 
     log_audit(db, current_admin.id, "force_password_reset_flagged", target=target.email)
+    publish_event("user_changed", {"action": "force_reset", "user_id": target.id, "email": target.email}, target_roles=["admin"])
+    publish_event("session_invalidated", {"reason": "A password reset was forced by an administrator. Please sign in again."}, target_user_ids=[target.id])
     return {"status": "success", "message": f"Password reset forced for {target.email} on next login."}
 
 
 @router.delete("/users/{user_id}")
-def admin_deactivate_user(
+def admin_delete_user(
     user_id: int,
+    permanent: bool = Query(False),
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    if permanent:
+        result = delete_user_permanently(db, user_id, current_admin)
+        return {
+            "status": "success",
+            "message": f"User '{result['target_email']}' deleted permanently.",
+            "details": result,
+        }
+
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -318,6 +365,8 @@ def admin_deactivate_user(
     db.commit()
 
     log_audit(db, current_admin.id, "user_deactivated", target=target.email)
+    publish_event("user_changed", {"action": "deactivated", "user_id": target.id, "email": target.email}, target_roles=["admin"])
+    publish_event("session_invalidated", {"reason": "Your account has been deactivated by an administrator."}, target_user_ids=[target.id])
     return {"status": "success", "message": f"User '{target.email}' has been deactivated."}
 
 
@@ -663,6 +712,7 @@ def reject_password_reset(
 # ---------------------------------------------------------------------------
 # Company Branding & Settings
 # ---------------------------------------------------------------------------
+@router.put("/branding")
 @router.put("/settings/branding")
 def update_branding(
     payload: BrandingUpdateRequest,
@@ -688,7 +738,9 @@ def update_branding(
         set_setting(db, "accent_color", color, updated_by=current_admin.id)
 
     log_audit(db, current_admin.id, "branding_updated")
-    return get_branding(db)
+    updated = get_branding(db)
+    publish_event("branding_updated", updated)
+    return updated
 
 
 @router.post("/settings/logo")
@@ -725,8 +777,10 @@ async def upload_company_logo(
 
     set_setting(db, "logo", filename, updated_by=current_admin.id)
     log_audit(db, current_admin.id, "logo_updated", details=filename)
+    updated = get_branding(db)
+    publish_event("branding_updated", updated)
 
-    return get_branding(db)
+    return updated
 
 
 # ---------------------------------------------------------------------------

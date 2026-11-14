@@ -54,6 +54,11 @@ def create_support_request(
         )
 
     log_audit(db, current_user.id, "support_request_created", target=req.id, details=req.subject)
+    try:
+        from backend.events import publish_event
+        publish_event("request_updated", {"request_id": req.id, "status": req.status, "user_id": req.user_id})
+    except Exception:
+        pass
     return {
         "id": req.id,
         "type": req.type,
@@ -201,6 +206,11 @@ def reply_support_request(
             )
 
     log_audit(db, current_user.id, "support_message_added", target=req.id)
+    try:
+        from backend.events import publish_event
+        publish_event("request_updated", {"request_id": req.id, "status": req.status, "user_id": req.user_id})
+    except Exception:
+        pass
     return {"status": "success", "message_id": msg.id}
 
 
@@ -239,4 +249,9 @@ def update_support_status(
         )
 
     log_audit(db, current_user.id, "support_status_updated", target=req.id, details=f"From {old_status} to {req.status}")
+    try:
+        from backend.events import publish_event
+        publish_event("request_updated", {"request_id": req.id, "status": req.status, "user_id": req.user_id})
+    except Exception:
+        pass
     return {"status": "success", "new_status": req.status}

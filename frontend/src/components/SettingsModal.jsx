@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import TabErrorBoundary from './TabErrorBoundary';
 import {
   X,
   Settings as SettingsIcon,
@@ -40,6 +41,7 @@ import {
   apiUpdateBranding,
   apiUploadLogo,
   apiGetAdminUsersPaginated,
+  apiDeleteUserPermanently,
   apiCreateAdminUser,
   apiUpdateAdminUser,
   apiForcePasswordReset,
@@ -143,6 +145,16 @@ export default function SettingsModal({
   // Admin: Audit Log
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [userError, setUserError] = useState(null);
+  const [reqError, setReqError] = useState(null);
+  const [resetsError, setResetsError] = useState(null);
+  const [auditError, setAuditError] = useState(null);
+
+  // Permanent Delete Modal state
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
+  const [deleteConfirmEmailInput, setDeleteConfirmEmailInput] = useState('');
+  const [deletingPermanently, setDeletingPermanently] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   useEffect(() => {
     if (currentUser) {
@@ -183,12 +195,18 @@ export default function SettingsModal({
 
   const loadAdminUsers = async () => {
     setUserLoading(true);
+    setUserError(null);
     try {
       const data = await apiGetAdminUsersPaginated(userSearch, userPage * 20, 20);
-      setUserList(data.items || []);
-      setUserTotal(data.total || 0);
+      const items = Array.isArray(data) ? data : (data?.items || []);
+      const total = Array.isArray(data) ? data.length : (data?.total ?? items.length);
+      setUserList(items);
+      setUserTotal(total);
     } catch (err) {
       console.error('Failed to load users:', err);
+      setUserError(err?.message || 'Failed to load users');
+      setUserList([]);
+      setUserTotal(0);
     } finally {
       setUserLoading(false);
     }
@@ -196,11 +214,14 @@ export default function SettingsModal({
 
   const loadAdminRequests = async () => {
     setReqLoading(true);
+    setReqError(null);
     try {
       const data = await apiGetAdminSupportRequests(reqStatusFilter || null);
-      setAdminRequests(data || []);
+      setAdminRequests(Array.isArray(data) ? data : (data?.items || []));
     } catch (err) {
       console.error('Failed to load requests:', err);
+      setReqError(err?.message || 'Failed to load requests');
+      setAdminRequests([]);
     } finally {
       setReqLoading(false);
     }
@@ -208,11 +229,14 @@ export default function SettingsModal({
 
   const loadPasswordResets = async () => {
     setResetsLoading(true);
+    setResetsError(null);
     try {
       const data = await apiGetPasswordResets('pending');
-      setResetsList(data || []);
+      setResetsList(Array.isArray(data) ? data : (data?.items || []));
     } catch (err) {
       console.error('Failed to load resets:', err);
+      setResetsError(err?.message || 'Failed to load password resets');
+      setResetsList([]);
     } finally {
       setResetsLoading(false);
     }
@@ -220,13 +244,54 @@ export default function SettingsModal({
 
   const loadAuditLogs = async () => {
     setAuditLoading(true);
+    setAuditError(null);
     try {
       const data = await apiGetAuditLog(100);
-      setAuditLogs(data || []);
+      setAuditLogs(Array.isArray(data) ? data : (data?.items || []));
     } catch (err) {
       console.error('Failed to load audit logs:', err);
+      setAuditError(err?.message || 'Failed to load audit logs');
+      setAuditLogs([]);
     } finally {
       setAuditLoading(false);
+    }
+  };
+
+  // Real-time event listeners for auto-refreshing admin lists
+  useEffect(() => {
+    const handleUserChanged = () => {
+      if (activeTab === 'users') loadAdminUsers();
+      if (activeTab === 'resets') loadPasswordResets();
+    };
+    const handleRequestUpdated = () => {
+      if (activeTab === 'requests') loadAdminRequests();
+    };
+    window.addEventListener('admin-users-changed', handleUserChanged);
+    window.addEventListener('admin-requests-changed', handleRequestUpdated);
+    return () => {
+      window.removeEventListener('admin-users-changed', handleUserChanged);
+      window.removeEventListener('admin-requests-changed', handleRequestUpdated);
+    };
+  }, [activeTab]);
+
+  const handlePermanentDelete = async () => {
+    if (!deleteConfirmUser) return;
+    if (deleteConfirmEmailInput.trim().toLowerCase() !== deleteConfirmUser.email.toLowerCase()) {
+      setDeleteError("Email doesn't match.");
+      return;
+    }
+    setDeletingPermanently(true);
+    setDeleteError(null);
+    try {
+      await apiDeleteUserPermanently(deleteConfirmUser.id);
+      if (onToast) onToast(`User ${deleteConfirmUser.email} deleted permanently`, 'success');
+      setDeleteConfirmUser(null);
+      setDeleteConfirmEmailInput('');
+      loadAdminUsers();
+    } catch (err) {
+      setDeleteError(err?.message || 'Failed to permanently delete user');
+    } finally {
+      setDeletingPermanently(false);
     }
   };
 
@@ -837,6 +902,7 @@ export default function SettingsModal({
 
             {/* TAB: BRANDING (ADMIN) */}
             {activeTab === 'branding' && currentUser?.role === 'admin' && (
+              <TabErrorBoundary tabTitle="Company Branding">
               <form onSubmit={handleSaveBranding} className="max-w-xl space-y-5">
                 {brandingMsg.text && (
                   <div
@@ -956,10 +1022,12 @@ export default function SettingsModal({
                   </button>
                 </div>
               </form>
+              </TabErrorBoundary>
             )}
 
             {/* TAB: USERS (ADMIN) */}
             {activeTab === 'users' && currentUser?.role === 'admin' && (
+              <TabErrorBoundary tabTitle="Users" onRetry={loadAdminUsers}>
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="relative flex-1 max-w-sm">
@@ -1000,6 +1068,21 @@ export default function SettingsModal({
                       {userLoading ? (
                         <tr>
                           <td colSpan={5} className="py-8 text-center text-gray-400">Loading users...</td>
+                        </tr>
+                      ) : userError ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-red-500">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <span>{userError}</span>
+                              <button
+                                type="button"
+                                onClick={loadAdminUsers}
+                                className="px-3 py-1 bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 rounded text-xs font-semibold hover:bg-red-200"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ) : userList.length === 0 ? (
                         <tr>
@@ -1067,6 +1150,19 @@ export default function SettingsModal({
                                   title="Force password reset on next login"
                                 >
                                   Force Reset
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isSelf}
+                                  onClick={() => {
+                                    setDeleteConfirmUser(u);
+                                    setDeleteConfirmEmailInput('');
+                                    setDeleteError(null);
+                                  }}
+                                  className="text-[11px] text-red-500 hover:text-red-700 dark:hover:text-red-400 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title={isSelf ? 'Cannot delete self' : 'Permanently delete user and all related data'}
+                                >
+                                  Delete
                                 </button>
                               </td>
                             </tr>
@@ -1170,10 +1266,12 @@ export default function SettingsModal({
                   </div>
                 )}
               </div>
+              </TabErrorBoundary>
             )}
 
             {/* TAB: REQUESTS INBOX (ADMIN) */}
             {activeTab === 'requests' && currentUser?.role === 'admin' && (
+              <TabErrorBoundary tabTitle="Requests Inbox" onRetry={loadAdminRequests}>
               <div className="space-y-4">
                 {selectedReqThread ? (
                   /* Admin Thread Inspector */
@@ -1316,10 +1414,12 @@ export default function SettingsModal({
                   </div>
                 )}
               </div>
+              </TabErrorBoundary>
             )}
 
             {/* TAB: PASSWORD RESETS (ADMIN) */}
             {activeTab === 'resets' && currentUser?.role === 'admin' && (
+              <TabErrorBoundary tabTitle="Password Resets" onRetry={loadPasswordResets}>
               <div className="space-y-4">
                 <p className="text-xs text-gray-500 dark:text-zinc-400">
                   When SMTP email delivery is disabled, pending user password resets require admin approval. Approving generates a one-time link to share with the user.
@@ -1412,10 +1512,12 @@ export default function SettingsModal({
                   </table>
                 </div>
               </div>
+              </TabErrorBoundary>
             )}
 
             {/* TAB: AUDIT LOG (ADMIN) */}
             {activeTab === 'audit' && currentUser?.role === 'admin' && (
+              <TabErrorBoundary tabTitle="Audit Log" onRetry={loadAuditLogs}>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-500">Immutable system action logs</span>
@@ -1442,16 +1544,31 @@ export default function SettingsModal({
                     <tbody className="divide-y divide-gray-100 dark:divide-zinc-800/60">
                       {auditLoading ? (
                         <tr><td colSpan={5} className="py-8 text-center text-gray-400">Loading audit log...</td></tr>
+                      ) : auditError ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-red-500">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <span>{auditError}</span>
+                              <button
+                                type="button"
+                                onClick={loadAuditLogs}
+                                className="px-3 py-1 bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 rounded text-xs font-semibold hover:bg-red-200"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                       ) : auditLogs.length === 0 ? (
                         <tr><td colSpan={5} className="py-8 text-center text-gray-400">No audit events recorded.</td></tr>
                       ) : (
                         auditLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-gray-50/50 dark:hover:bg-zinc-800/30">
                             <td className="px-3 py-2 text-[11px] text-gray-400 whitespace-nowrap">
-                              {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              {log.created_at ? new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                             </td>
                             <td className="px-3 py-2 font-mono text-[11px] text-gray-700 dark:text-zinc-300">
-                              {log.actor_email || `ID:${log.actor_id}`}
+                              {log.actor_email || (log.actor_id ? `ID:${log.actor_id}` : 'System')}
                             </td>
                             <td className="px-3 py-2 font-semibold text-gray-900 dark:text-white">
                               {log.action}
@@ -1459,8 +1576,8 @@ export default function SettingsModal({
                             <td className="px-3 py-2 text-gray-500 text-[11px]">
                               {log.target || '-'}
                             </td>
-                            <td className="px-3 py-2 text-gray-400 text-[11px] truncate max-w-xs" title={log.details}>
-                              {log.details || '-'}
+                            <td className="px-3 py-2 text-gray-400 text-[11px] truncate max-w-xs" title={typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '')}>
+                              {typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '-')}
                             </td>
                           </tr>
                         ))
@@ -1469,6 +1586,7 @@ export default function SettingsModal({
                   </table>
                 </div>
               </div>
+              </TabErrorBoundary>
             )}
           </div>
         </div>

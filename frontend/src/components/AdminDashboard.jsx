@@ -72,7 +72,7 @@ export default function AdminDashboard({ onBackToChat }) {
       ]);
       setStats(statsData);
       setCompanyDocs(docsData);
-      setUsers(usersData);
+      setUsers(Array.isArray(usersData) ? usersData : (usersData?.items || []));
       if (analyticsData) setAnalytics(analyticsData);
       if (diagData) setDiagnostics(diagData);
     } catch (err) {

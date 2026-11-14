@@ -60,6 +60,7 @@ from backend.routers.admin import router as admin_router
 from backend.routers.profile import router as profile_router
 from backend.routers.support import router as support_router
 from backend.routers.notifications import router as notifications_router
+from backend.routers.events import router as events_router
 
 
 def warmup_models():
@@ -222,6 +223,7 @@ app.include_router(admin_router)
 app.include_router(profile_router)
 app.include_router(support_router)
 app.include_router(notifications_router)
+app.include_router(events_router)
 
 
 # Serve extracted image files (Supports cookies, <img> tags via ?token= query param, or Header)

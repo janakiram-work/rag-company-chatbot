@@ -154,25 +154,31 @@ async function request(url, options = {}, isRetry = false) {
       }
     }
 
-    removeAuthToken();
-    try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'ngrok-skip-browser-warning': '1' },
-      });
-    } catch {}
+    const isSessionAuthCheck = url.includes('/auth/me');
+    if (isSessionAuthCheck && hadPriorSession) {
+      removeAuthToken();
+      try {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'ngrok-skip-browser-warning': '1' },
+        });
+      } catch {}
 
-    if (hadPriorSession) {
       window.dispatchEvent(
         new CustomEvent('auth-expired', {
           detail: { message: 'Your session ended, please sign in again' },
         })
       );
       throw new Error('Your session ended, please sign in again');
-    } else {
-      throw new Error('Unauthorized');
     }
+
+    let errDetail = 'Unauthorized';
+    try {
+      const errJson = await res.json();
+      errDetail = errJson.detail || errJson.message || errDetail;
+    } catch {}
+    throw new Error(errDetail);
   }
 
   if (res.status === 429) {
@@ -336,6 +342,8 @@ export const apiForcePasswordReset = (userId) =>
   request(`/admin/users/${userId}/force-password-reset`, { method: 'POST' });
 export const apiDeactivateUser = (userId) =>
   request(`/admin/users/${userId}`, { method: 'DELETE' });
+export const apiDeleteUserPermanently = (userId) =>
+  request(`/admin/users/${userId}?permanent=true`, { method: 'DELETE' });
 export const apiGetAuditLog = (limit = 100, action = null) => {
   const query = action ? `?limit=${limit}&action=${encodeURIComponent(action)}` : `?limit=${limit}`;
   return request(`/admin/audit${query}`);

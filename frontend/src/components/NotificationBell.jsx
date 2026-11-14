@@ -46,11 +46,17 @@ export default function NotificationBell({ onOpenSupport, onToast }) {
         fetchNotifications(true);
       }
     };
+    const handleNewNotif = () => {
+      fetchNotifications(false);
+    };
+
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('app-new-notification', handleNewNotif);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('app-new-notification', handleNewNotif);
     };
   }, []);
 

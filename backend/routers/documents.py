@@ -53,12 +53,30 @@ def process_document_background(
         doc.chunk_count = chunk_count
         db.commit()
         invalidate_query_cache()
+        try:
+            from backend.events import publish_event
+            publish_event(
+                "document_status",
+                {"doc_id": doc_id, "status": "ready", "filename": filename, "scope": scope},
+                target_user_ids=[owner_id],
+            )
+        except Exception:
+            pass
     except Exception as e:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if doc:
             doc.status = "failed"
             doc.error_message = str(e)
             db.commit()
+            try:
+                from backend.events import publish_event
+                publish_event(
+                    "document_status",
+                    {"doc_id": doc_id, "status": "failed", "filename": filename, "error": str(e)},
+                    target_user_ids=[owner_id],
+                )
+            except Exception:
+                pass
     finally:
         db.close()
 

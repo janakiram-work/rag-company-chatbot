@@ -411,6 +411,15 @@ def create_notification(db: Session, user_id: int, type: str, title: str, body: 
         )
         db.add(notif)
         db.commit()
+        try:
+            from backend.events import publish_event
+            publish_event(
+                "new_notification",
+                {"id": notif.id, "type": notif.type, "title": notif.title, "body": notif.body, "link": notif.link},
+                target_user_ids=[user_id],
+            )
+        except Exception:
+            pass
         return notif
     except Exception as e:
         db.rollback()

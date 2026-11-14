@@ -94,6 +94,18 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
         }
       })
       .catch(() => {});
+
+    const handleStorage = (e) => {
+      if (e.key === 'app_branding' && e.newValue) {
+        try {
+          const b = JSON.parse(e.newValue);
+          setBranding(b);
+          if (b.company_name) document.title = `${b.company_name} Assistant`;
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   useEffect(() => {

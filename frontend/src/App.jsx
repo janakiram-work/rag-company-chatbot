@@ -128,6 +128,86 @@ export default function App() {
     return () => window.removeEventListener('auth-expired', handleExpired);
   }, []);
 
+  // Server-Sent Events (SSE) live updates stream
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let es = null;
+    let reconnectTimeout = null;
+    let retryDelay = 2000;
+    let isCleanedUp = false;
+
+    const connectSSE = () => {
+      if (isCleanedUp) return;
+      try {
+        es = new EventSource('/api/events', { withCredentials: true });
+
+        es.onopen = () => {
+          retryDelay = 2000;
+        };
+
+        es.onmessage = (e) => {
+          if (!e.data) return;
+          try {
+            const payload = JSON.parse(e.data);
+            const { type, data } = payload;
+
+            if (type === 'branding_updated' && data) {
+              setBranding(data);
+              localStorage.setItem('app_branding', JSON.stringify(data));
+              if (data.company_name) {
+                document.title = `${data.company_name} Assistant`;
+              }
+            } else if (type === 'new_notification') {
+              window.dispatchEvent(new CustomEvent('app-new-notification', { detail: data }));
+            } else if (type === 'request_updated') {
+              window.dispatchEvent(new CustomEvent('admin-requests-changed', { detail: data }));
+            } else if (type === 'user_changed') {
+              window.dispatchEvent(new CustomEvent('admin-users-changed', { detail: data }));
+            } else if (type === 'document_status') {
+              window.dispatchEvent(new CustomEvent('app-document-status', { detail: data }));
+            } else if (type === 'session_invalidated') {
+              const msg = data?.reason || 'Your session has ended. Please sign in again.';
+              setSessionExpiredMsg(msg);
+              apiLogout().catch(() => {});
+              removeAuthToken();
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+            }
+          } catch (err) {
+            console.error('Failed to parse SSE event:', err);
+          }
+        };
+
+        es.onerror = () => {
+          if (es) {
+            es.close();
+            es = null;
+          }
+          if (!isCleanedUp) {
+            reconnectTimeout = setTimeout(() => {
+              retryDelay = Math.min(retryDelay * 1.5, 30000);
+              connectSSE();
+            }, retryDelay);
+          }
+        };
+      } catch (err) {
+        console.error('Error opening SSE connection:', err);
+      }
+    };
+
+    connectSSE();
+
+    return () => {
+      isCleanedUp = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (es) {
+        es.close();
+        es = null;
+      }
+    };
+  }, [isAuthenticated]);
+
   // Load conversations when authenticated
   const loadConversations = async () => {
     try {
