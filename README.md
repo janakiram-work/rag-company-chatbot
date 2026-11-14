@@ -1,498 +1,366 @@
-# ABC Technologies Enterprise RAG Assistant
+# Enterprise RAG Assistant
 
-A production-ready Retrieval-Augmented Generation (RAG) multimodal enterprise chatbot built with FastAPI, SQLite/PostgreSQL, ChromaDB, and React.
-
----
-
-## 🌟 Key Features
-
-1. **Format-Agnostic Multi-Format Ingestion**:
-   - **PDF**: PyMuPDF (`fitz`) text and embedded raster image extraction.
-   - **DOCX**: `python-docx` headings, paragraphs, formatted tables, and embedded graphics.
-   - **TXT**: Plain text with UTF-8 and Latin-1 fallback.
-   - **PNG / JPG**: OCR text extraction via `EasyOCR` + image registration.
-   - **Validation**: Strict extension and magic byte verification (`%PDF-`, `PK\x03\x04`, `\x89PNG\r\n\x1a\n`, `\xff\xd8\xff`), 20 MB size limit, and automatic rejection of legacy `.doc` files.
-2. **Deterministic Vector Ingestion & ChromaDB**:
-   - `RecursiveCharacterTextSplitter` (chunk size **900**, overlap **150**).
-   - Normalized embeddings using `BAAI/bge-small-en-v1.5` (384-dimensional).
-   - Deterministic chunk IDs (`f"{doc_id}_t{idx}"` and `f"{doc_id}_img{idx}"`) preventing duplicates on re-ingestion.
-   - Automatic orphan chunk cleanup on server startup.
-   - Cascade delete: Removing a document cleanly wipes all vectors from ChromaDB and physical files from disk.
-3. **Conversational Memory & Query Rewriting**:
-   - **Short-Term Memory**: Injects the last 8 messages verbatim into the prompt.
-   - **Long-Term Memory**: Synthesizes running summaries of conversations exceeding 8 messages.
-   - **Query Rewriter**: Resolves ambiguous follow-up pronouns (e.g. *"What is their email?"* -> *"What is the CEO's email?"*).
-   - **Conversation & Small Talk Handling**: Greetings, expressions of thanks, capability questions, and conversation-history questions are answered conversationally without triggering document "couldn't find" messages.
-4. **Scope-Aware Retrieval & Anti-Hallucination**:
-   - **Active Document Scope**: When an active document filter is set, no similarity gate is applied. If the doc has $\le 12$ chunks, all chunks are sent ordered by page; otherwise, top 8 chunks plus the first 2 chunks are sent.
-   - **Uploaded Document Reference**: Queries mentioning "the uploaded pdf/document/file/resume" automatically resolve to the user's most recently uploaded ready document.
-   - **Company Scope**: Configurable similarity threshold gate (`SIMILARITY_THRESHOLD=0.35`). Out-of-context document questions reply strictly: *"I couldn't find that in the documents."* with zero sources and zero images.
-5. **Visual Grounding & Inline Figures**:
-   - Returns up to 2 highest-scoring relevant images only when the query explicitly asks for a visual figure, chart, diagram, or photo.
-   - Clickable source citation chips (`📄 filename (page/section)`) with excerpt preview and direct **Open PDF at Page** action (deduplicated by filename and location, excluding image chunks).
-6. **Deterministic Planner & Clarification Engine**:
-   - **Deterministic Classification**: Code-level regex and parsing for `SHOW_IMAGES`, `FIND_IMAGE`, `DESCRIBE_IMAGE`, `DOC_QA`, `CHAT`, and `CONVERSATION`.
-   - **Parameter Extraction**: Parses page numbers (`pages 2-4`, `page 1`), ordinals (`first`, `second`, `pic 1`), and deictics (`this picture`).
-   - **Interactive Clarification**: If a query is ambiguous (e.g. multiple attached documents when asked "show me the picture"), returns interactive choice pills or accepts free-text answers. Unrelated questions silently dismiss pending clarifications.
-7. **Multimodal Image Matching & Homography Highlighting (`FIND_IMAGE`)**:
-   - **Hybrid Matching Pipeline**:
-     - **Perceptual Hash (`imagehash.phash`)**: Fast Hamming distance comparison for exact or nearly-identical images.
-     - **OpenCV SIFT & RANSAC Homography**: Detects cropped, scaled, or rotated sub-images embedded inside documents or larger canvas layouts.
-     - **OCR Token Jaccard**: Text overlap comparison for text-dense diagrams or forms.
-     - In-memory `(filepath, mtime)` caching for hashes and SIFT descriptors; images downscaled to max 1200 px for low CPU/memory footprint.
-   - **Visual Bounding Box Highlighting**: RANSAC homography projects the query outline onto the candidate page/image and saves a highlighted rendering with a red border and semi-transparent overlay.
-   - **Pairwise Comparison**: Syntax like *"is picture 1 in picture 2"* compares attached images directly.
-   - **Answer Formatting**: If confidence $\ge$ `IMAGE_MATCH_MIN_CONFIDENCE`, returns `"Yes, this picture appears in <file>, page <n> (confidence <x>%)"`. Below threshold: `"I couldn't find a matching image in the attached documents."`
-8. **Role-Based Access Control (RBAC)**:
-   - **Admin**:
-     - System stats (Users, Company Docs, Vector Chunks, Messages, Storage).
-     - Company Knowledge Base manager (upload and delete with cascade).
-     - User management & Chat Audit viewer (inspect any user's past conversations and transcripts).
-     - Floating chat panel at bottom-right with paperclip upload (indexes directly into `scope=company` without locking the conversation).
-   - **User**:
-     - Modern ChatGPT-style chat with real-time SSE token streaming.
-     - Document upload in chat (locks conversation to single document filter with a visible `Filtered: filename ✕` chip).
-     - Complete document and chat history isolation.
+A production-ready multimodal Retrieval-Augmented Generation (RAG) assistant for enterprise documents. The system provides real-time streaming answers grounded strictly in private and company-wide knowledge, accompanied by clickable document citations and visual figures. Built with FastAPI, SQLite, ChromaDB, and a React single-page application.
 
 ---
 
-## 🏗️ Architecture
+## 1. Features
+
+- **Multimodal Conversational RAG**: Ingests PDF, DOCX, TXT, PNG, and JPG documents with text extraction and OCR. Streams answers in real time with source citations (`📄 filename (page/section)`) and relevant inline figures. When answers are not grounded in documents, the assistant strictly responds with: `"I couldn't find that in the documents."`
+- **Document Scopes & Isolation**:
+  - *Company Documents*: Uploaded by administrators, visible and queryable by all users.
+  - *Private Documents*: Uploaded by users within specific conversations, isolated strictly to that user and conversation.
+- **High-Performance LLM Provider**: Powered exclusively by Groq for low-latency generation and query planning.
+- **Dynamic White-Label Branding**: Admins can customize company name, tagline, logo image, and accent color at runtime; branding updates reflect instantly across all clients without a restart.
+- **Flexible Authentication**: Supports username or email login, bcrypt password hashing, and token versioning for instant session revocation.
+- **Dual Password Reset Workflows**: Supports direct email delivery via SMTP or an offline Admin Approval Inbox mode with single-use reset links.
+- **User Settings & Privacy**: Dark/light theme toggle, password changes, JSON conversation export, and self-service chat deletion.
+- **Comprehensive Administration**: Admin panel covering user management, support requests inbox, pending password resets, immutable audit logs, analytics, diagnostics, and document management.
+- **Ask Admin Support Tickets**: Users can submit help or document access requests directly within the interface; admins manage threads with real-time bidirectional replies.
+- **Real-Time Push Notifications**: Real-time updates delivered over a persistent Server-Sent Events (SSE) connection with automatic exponential reconnect and polling fallback.
+- **Permanent User Deletion**: Admin capability to permanently delete users, cascading through conversations, messages, private files, and ChromaDB vectors while safely reassigning company documents to the acting admin.
+
+---
+
+## 2. Architecture & Project Structure
 
 ```
-                      ┌──────────────────────────────────────────────┐
-                      │          React + Tailwind Frontend           │
-                      │  (ChatGPT-style UI, Dark/Light Mode, SSE)    │
-                      └───────┬──────────────────────────────┬───────┘
-                              │ REST APIs (Auth, Docs, Admin)│ SSE Stream (/messages)
-                              ▼                              ▼
-                      ┌──────────────────────────────────────────────┐
-                      │             FastAPI Backend                  │
-                      ├────────────────────────────────────────┤
-                      │  - JWT Bearer Auth & RBAC (Admin / User)     │
-                      │  - Multi-Format Extractor (PDF, DOCX, TXT,   │
-                      │    PNG, JPG) with Magic Bytes & OCR          │
-                      │  - RecursiveCharacterTextSplitter (900/150)  │
-                      │  - Memory Manager (8 msgs + Running Summary) │
-                      │  - Real-Time SSE Streamer (Groq LLM)         │
-                      └───────┬──────────────────────────────┬───────┘
-                              │                              │
-              ┌───────────────┴───────────────┐              │
-              ▼                               ▼              ▼
-     ┌─────────────────┐             ┌─────────────────┐ ┌─────────────────┐
-     │ postgre Database│             │ ChromaDB Vector │ │  Local Storage  │
-     │  (SQLAlchemy)   │             │  (Persistent)   │ │ (PDFs & Images) │
-     │ - Users & Roles │             │ - BGE-small-en  │ │ - uploads/docs/ │
-     │ - Conversations │             │ - 900-char text │ │ - uploads/img/  │
-     │ - Messages & Src│             │ - Image context │ └─────────────────┘
-     └─────────────────┘             └─────────────────┘
+[Browser / React SPA]
+       |
+       | REST Requests (Cookies / Bearer JWT) & SSE Streams
+       v
+[FastAPI Backend (Single Uvicorn Worker)]
+       |-- In-Process Pub/Sub Event Bus (/api/events)
+       |-- Query Planner & Clarification Engine
+       |-- RAG Pipeline (BGE-small-en embeddings & EasyOCR)
+       |
+       +--> [SQLite Database (rag_company.db)] -- Users, Sessions, Chats, Audit
+       +--> [ChromaDB Vector Store (chroma_data/)] -- 384-dim Dense Chunks
+       +--> [Local Storage (uploads/)] -- PDFs, Extracted Images, Branding
+       +--> [Groq Cloud API] -- Fast LLM Inference & Query Rewriting
 ```
 
----
-
-## 🔑 Administrator & Account Seeding
-
-The database seeds an administrator account on initial startup only when `ADMIN_EMAIL` and `ADMIN_PASSWORD` are configured in `.env`.
-- **Security Check**: `ADMIN_PASSWORD` must be at least 8 characters and cannot be a common default (`admin@123`, `admin123`, `password`). Weak passwords are explicitly refused on startup.
-- **Demo Users**: Baseline/demo accounts are never seeded unless `SEED_DEMO_USERS=true` in `.env` (strictly forbidden when `APP_ENV=production`). Demo accounts read credentials from `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD`, `DEMO_USER_EMAIL`, and `DEMO_USER_PASSWORD`.
-
-*(Registration via `/register` or the UI always assigns `role="user"` for security).*
-
----
-
-## 🎨 Enterprise Branding & Product Customization
-
-1. **Dynamic White-Labeling**:
-   - Admins can configure the application's **Company Name**, **Tagline**, **Primary Accent Color**, and upload a custom **Company Logo** directly via the Admin Console (`/admin` -> Company Branding tab) or via API (`PUT /api/admin/settings/branding`).
-   - Changes take effect dynamically across all user sessions without requiring a backend restart.
-   - The public configuration endpoint `GET /api/config` serves branding attributes preloaded at page load.
-
-2. **Account Menu & User Settings**:
-   - ChatGPT/Claude-style user avatar dropdown at the bottom of the sidebar.
-   - Comprehensive Settings modal with tabs:
-     - **Profile**: Update display name, customize avatar accent color, and view role/email.
-     - **Appearance**: Select Theme (Light, Dark, or System) and toggle reduced motion.
-     - **Security**: Self-service password change requiring current password and enforcing strength policies.
-
-3. **Dual-Identifier Login & Username Support**:
-   - Users can authenticate with either their **Email** or **Username** interchangeably.
-   - Registration enforces unique lowercase usernames (min 3 characters, alphanumeric plus dots/underscores).
-   - All legacy database accounts are automatically backfilled with unique usernames on migration.
-
-4. **Self-Service & Admin-Approved Password Resets**:
-   - **Forgot Password**: Users submit their email or username to initiate a password reset. Returns a generic non-enumerating confirmation response.
-   - **SMTP Mode**: When `SMTP_HOST` is configured, an email with a secure single-use reset link (`/?token=...`) is dispatched immediately.
-   - **Admin Approval Mode**: If SMTP is unconfigured, password reset requests route to the **Admin Password Resets Inbox** (`/admin` -> Password Resets tab). Admins review pending requests and generate a single-use reset URL to share securely with the employee.
-   - Single-use tokens expire after 30 minutes, increment the user's `token_version`, and invalidate any existing active user sessions upon completion.
-
-5. **Inquiries & In-App Notification Bell**:
-   - Users can submit support inquiries, bug reports, and document access requests directly from the chat UI (`POST /api/support/requests`).
-   - Admins review and reply to inquiries in real time from the Admin Console.
-   - Users receive live badge counts and toasts via the header **Notification Bell** with one-click actions.
-
-6. **CLI Password Management (`scripts/set_password.py`)**:
-   - For server administrators needing out-of-band password management:
-     ```bash
-     python scripts/set_password.py <username_or_email>
-     ```
-   - Uses `getpass` hidden terminal input asked twice.
-   - Enforces a minimum of 12 characters and rejects known weak defaults.
-   - Never logs or prints passwords to standard output.
-   - Invalidates all existing active user sessions by incrementing the account's token version.
-
----
-
-## 🔒 Security Hardening
-
-- **Cookie-Based Authentication**: JWT access token (30 min) and refresh token (7 days) stored in `httpOnly`, `SameSite=Lax` cookies with `credentials: 'include'` support, plus backward-compatible `Bearer` header support.
-- **Configurable `COOKIE_SECURE`**: Toggleable via `COOKIE_SECURE=true` behind HTTPS or `false` for local plain HTTP.
-- **Token Refresh & Logout**: `POST /api/auth/refresh` silently renews access tokens on expiry; `POST /api/auth/logout` clears both auth cookies.
-- **SlowAPI Rate Limiting & Failed Login Protection**:
-  - `POST /api/auth/login`: 10 failed attempts / min keyed by client IP + email (successful logins do not count; returns `Retry-After` and displays a live countdown in the UI).
-  - `POST /api/conversations/{id}/messages`: 30 requests / min per user.
-  - `POST /api/documents/upload`: 10 requests / min per user.
-- **Message Feedback & Analytics**:
-  - User feedback on assistant answers via thumbs up / thumbs down (`POST /api/messages/{id}/feedback`) with optional comment modal on dislike.
-  - Admin Analytics console (`GET /api/admin/analytics`, RBAC-protected): summary metrics (total questions, thumbs-up %, thumbs-down count, "not found" rate, average latency), 14-day daily message volume chart, top user questions, missing documents list, and thumbs-down audits.
-- **Structured Logging**:
-  - Structured request and LLM latency logging to `logs/app.log` via a `RotatingFileHandler` with unique `X-Request-ID` tracking. Never logs credentials, tokens, or cookies.
-- **CORS & Headers**: Strict CORS origin validation using `ALLOWED_ORIGINS`, standard security headers (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`), and a detailed health check at `GET /health` (`status`, `database`, `vector_store`, `llm_configured`).
-
----
-
-## Deploy on a server
-
-This guide walks through deploying the Enterprise RAG Assistant on a fresh server running **Linux (Ubuntu/Debian/RHEL)** or **Windows Server**.
-
-### 1. Prerequisites
-- **Operating System**: Linux (Ubuntu 22.04 LTS / Debian 12 recommended) or Windows 10 / 11 / Server 2022.
-- **Python**: **Python 3.11** (specified in `.python-version`; 3.10–3.14 compatible).
-- **RAM**: Minimum 4 GB RAM (8 GB recommended for sentence embeddings & EasyOCR).
-- **Disk Space**: At least 10 GB free space for packages, models, and uploads.
-- **Node.js LTS**: Only required if you intend to rebuild the frontend assets from `frontend/src`. The production build is pre-compiled and tracked inside `frontend/dist/`, so Node.js is **not required** on the deployment server for standard installations.
-- **Groq API Key**: A valid API key from [Groq Cloud Console](https://console.groq.com/). Groq is the only third-party LLM provider used by the system.
-- **Dependency Locking**: A lock file (`requirements.lock`) is optional and must be generated on the target Python version (`pip freeze > requirements.lock`).
-
-> **Platform Verification**: Verified on Windows with Python 3.14. Linux, Python 3.11 and Docker not run yet.
-
-### 2. Project Structure
+### Repository Structure
 
 | Directory / File | Description |
 |---|---|
-| `backend/` | FastAPI server, RAG pipeline, routers, database models, schemas, and concurrency controls |
-| `frontend/` | React 18 SPA source code (`frontend/src`) and tracked production bundle (`frontend/dist`) |
-| `demo/` | Sample enterprise documents (PDF, DOCX, TXT, PNG) and demo images |
-| `eval/` | RAG evaluation datasets (`questions.json`) and benchmark reports |
-| `scripts/` | Management utilities (`setup.py`, `smoke_test.py`, `prune_users.py`, `set_password.py`, `load_test.py`) |
-| `tests/` | Comprehensive test suite with isolated synthetic environment fixtures |
-| `run.bat` / `run.sh` | Direct venv startup scripts for Windows and Linux |
-| `Dockerfile` / `docker-compose.yml` | Container deployment definitions (untested) |
-
-### 3. Linux Server Deployment (Ubuntu / Debian)
-
-```bash
-# Update system packages and install Python 3.11 prerequisites
-sudo apt-get update && sudo apt-get install -y python3.11 python3.11-venv python3-pip git curl libgl1 libglib2.0-0
-
-# Clone repository
-git clone <repository_url> new_chatbot_prod
-cd new_chatbot_prod
-
-# Create and activate virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install runtime dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# Run automated setup script (creates .env with cryptographically secure JWT secret)
-python scripts/setup.py
-
-# Pre-download and cache embedding and OCR models (optional, prevents first-request delay)
-python scripts/download_models.py
-```
-
-### 4. Windows Server Deployment
-
-```powershell
-# Clone repository
-git clone <repository_url> new_chatbot_prod
-cd new_chatbot_prod
-
-# Create virtual environment
-python -m venv venv
-.\venv\Scripts\activate
-
-# Install runtime dependencies
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-
-# Run automated setup script
-python scripts/setup.py
-
-# Pre-download models
-python scripts/download_models.py
-```
-
-### 5. Configuration: Every `.env` Variable Explained
-
-Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRET`. Edit `.env` to configure your environment:
-
-| Variable | Default Value | Description & Purpose |
-|---|---|---|
-| `APP_ENV` | `development` | Application environment (`development` or `production`). In `production`, startup strictly validates strong JWT secrets. |
-| `HOST` | `0.0.0.0` | Network binding interface (`0.0.0.0` listens on all interfaces; `127.0.0.1` for local-only/reverse proxy). |
-| `PORT` | `8000` | HTTP listening port. |
-| `BUILD_VERSION` | `1.0.0` | Build version returned by `/api/config` and `/api/admin/diagnostics`. |
-| `COOKIE_SECURE` | `false` | Set to `true` behind HTTPS/SSL. Leave `false` when accessing via plain HTTP or during local LAN testing to prevent login cookie rejection. |
-| `DEMO_MODE` | `false` | When `true`, shows quick-demo login buttons on the login page. Keep `false` in production. |
-| `BEHIND_PROXY` | `false` | Set to `true` when running behind Nginx, ngrok, or AWS ALB. Enables extraction of real client IPs from `X-Forwarded-For` and automatic HTTPS detection from `X-Forwarded-Proto`. |
-| `PUBLIC_URL` | `""` | Publicly accessible URL (e.g. `https://chat.abctechnologies.com` or ngrok URL). |
-| `ALLOWED_ORIGINS` | `http://127.0.0.1:8000,...` | Comma-separated list of allowed CORS web origins (e.g. `https://chat.abctechnologies.com`). Same-origin requests are always allowed. |
-| `COMPANY_NAME` | `ABC Technologies` | Company branding displayed in the UI and assistant system prompt. |
-| `GROQ_API_KEY` | *(Required)* | Groq API Key (`gsk_...`). Groq is the ONLY third-party LLM provider required. If missing or rate-limited, friendly fallbacks are returned without crashes. |
-| `GROQ_MODEL` | `qwen/qwen3.8-27b` | Primary Groq model used for RAG document answering and conversational turns. |
-| `GROQ_FAST_MODEL`| `openai/gpt-oss-20b` | Fast Groq model for intent routing and title generation. |
-| `VISION_MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq vision model for image descriptions. |
-| `LLM_TEMPERATURE`| `0.2` | Generation temperature for document answers (low temperature minimizes hallucinations). |
-| `JWT_SECRET` | *(Random 48-byte string)* | Cryptographic secret for signing JWT access and refresh tokens. Auto-generated and persisted in `data/.jwt_secret` if omitted. |
-| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access token lifespan in minutes. |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifespan in days. |
-| `ADMIN_EMAIL` | *(None / configured in .env)* | Initial admin account email seeded on first startup. |
-| `ADMIN_PASSWORD` | *(None / configured in .env)* | Initial admin password seeded on first startup (minimum 8 chars, common defaults refused). |
-| `SEED_DEMO_USERS` | `false` | When `true` (and `APP_ENV!=production`), seeds demo accounts from `DEMO_*` environment variables. |
-| `DATABASE_URL` | `sqlite:///./rag_company.db` | SQLAlchemy connection URL (`sqlite:///./rag_company.db` or PostgreSQL `postgresql://user:pass@host:5432/dbname`). |
-| `CHROMA_DIR` | `chroma_data` | Directory for persistent ChromaDB vector store. |
-| `UPLOAD_DIR` | `uploads` | Root directory for stored documents, images, and rendered pages. |
-| `LOG_DIR` | `logs` | Directory for rotating application request and latency logs. |
-| `DATA_DIR` | `data` | Directory for internal persistent state like auto-generated `.jwt_secret`. |
-| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Hugging Face embedding model name. |
-| `SIMILARITY_THRESHOLD` | `0.35` | Cosine similarity threshold for company scope. Below this, answers trigger out-of-context fallback. |
-| `TOP_K_CHUNKS` | `5` | Maximum number of vector chunks passed into context prompt. |
-| `USE_HYBRID` | `false` | Enable BM25 keyword search blended with vector search via Reciprocal Rank Fusion ($k=60$). |
-| `USE_RERANKER` | `false` | Enable cross-encoder reranking over retrieved candidate chunks. |
-| `IMAGE_HASH_MAX_DISTANCE` | `12` | Max Hamming distance for perceptual hash visual matching. |
-| `SIFT_MIN_INLIERS` | `15` | Minimum homography inliers for OpenCV SIFT sub-image match. |
-| `IMAGE_MATCH_MIN_CONFIDENCE` | `0.40` | Minimum confidence score to assert a positive visual match. |
-| `WARMUP_OCR` | `false` | Preload EasyOCR model on startup thread. Default `false` keeps startup fast and memory footprint low. |
-| `MAX_HEAVY_TASKS` | `2` | Bounded semaphore limiting concurrent heavy workloads (embedding, OCR, SIFT) to protect small RAM instances. |
-| `MAX_CONCURRENT_CHATS` | `6` | Maximum concurrent streaming chat sessions. Exceeding requests get HTTP 503 with Retry-After. |
-| `SMTP_HOST` | `""` | Optional SMTP server hostname for outbound password reset emails. |
-| `SMTP_PORT` | `587` | SMTP port (e.g. 587 for STARTTLS or 465 for SSL). |
-| `SMTP_USER` | `""` | SMTP username / sender account. |
-| `SMTP_PASSWORD` | `""` | SMTP password / app password. |
-| `SMTP_FROM` | `""` | Outbound email sender address. |
-| `SMTP_TLS` | `true` | Enable TLS encryption for SMTP delivery. |
-
-### 6. Starting the Server
-
-- **Linux**:
-  ```bash
-  chmod +x run.sh
-  ./run.sh
-  ```
-- **Windows**:
-  ```cmd
-  run.bat
-  ```
-
-### 7. Opening Firewall Ports
-
-- **Ubuntu (UFW)**:
-  ```bash
-  # Open direct app port (if not using reverse proxy)
-  sudo ufw allow 8000/tcp
-  # Open HTTP and HTTPS for Nginx
-  sudo ufw allow 80/tcp
-  sudo ufw allow 443/tcp
-  sudo ufw reload
-  ```
-- **Windows Firewall**:
-  ```powershell
-  New-NetFirewallRule -DisplayName "Enterprise RAG Chatbot" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
-  ```
-
-### 8. Nginx Reverse Proxy with HTTPS & SSE Buffering Configuration
-
-For production HTTPS, place FastAPI behind an Nginx reverse proxy. SSE streaming requires disabling proxy buffering:
-
-```nginx
-# /etc/nginx/sites-available/rag.conf
-server {
-    listen 80;
-    server_name rag.abctechnologies.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name rag.abctechnologies.com;
-
-    ssl_certificate /etc/letsencrypt/live/rag.abctechnologies.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/rag.abctechnologies.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    client_max_body_size 25M;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-
-        # CRITICAL for SSE Streaming:
-        proxy_set_header Connection '';
-        proxy_http_version 1.1;
-        chunked_transfer_encoding off;
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 300s;
-    }
-}
-```
-
-> **IMPORTANT (HTTPS & Cookies)**: When serving behind HTTPS or an SSL-terminating reverse proxy, set `COOKIE_SECURE=true` and `BEHIND_PROXY=true` in `.env`. If `COOKIE_SECURE=true` is inadvertently used on plain HTTP, modern browsers will reject the session cookies causing an endless login loop.
-
-### 9. Systemd Service Configuration (Linux)
-
-Create a systemd unit file at `/etc/systemd/system/rag-chatbot.service`:
-
-```ini
-[Unit]
-Description=Enterprise RAG Chatbot Service
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/new_chatbot_prod
-EnvironmentFile=/home/ubuntu/new_chatbot_prod/.env
-ExecStart=/home/ubuntu/new_chatbot_prod/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable rag-chatbot
-sudo systemctl start rag-chatbot
-sudo systemctl status rag-chatbot
-```
-
-### 10. Recommended Server Sizing
-
-| Workload | Recommended RAM | CPU Cores | Supported Concurrent Users |
-|---|---|---|---|
-| **Minimal / Pilot** | 2 GB RAM (with 2 GB swap) | 1-2 vCPU | ~2–4 users |
-| **Standard Team** | 4 GB RAM | 2-4 vCPU | ~6–10 users |
-| **Enterprise / Heavy** | 8 GB+ RAM | 4+ vCPU | 15+ concurrent users |
-
-*Notes on memory management*:
-- `MAX_HEAVY_TASKS=2` (default) ensures heavy CPU/memory operations (embedding, SIFT, OCR) are throttled via bounded semaphores to prevent out-of-memory errors on 2-4 GB VPS instances.
-- Fast token streaming with Groq offloads LLM compute to the cloud, keeping local server memory footprint low (~800 MB–1.2 GB idle/active).
-
-### 11. Sharing Through ngrok (Free Tunnel)
-
-You can share your local or LAN instance publicly over the internet using ngrok:
-```bash
-# 1. Start application on port 8000
-./run.sh  # or run.bat
-
-# 2. In another terminal, start ngrok
-ngrok http 8000
-```
-
-**Required Settings for ngrok**:
-1. In `.env`, ensure:
-   ```ini
-   BEHIND_PROXY=true
-   COOKIE_SECURE=true
-   ```
-   *(ngrok serves over HTTPS, so `COOKIE_SECURE=true` or automatic proto detection is required for authentication cookies).*
-2. **Ngrok Inspector**: Monitor HTTP requests and SSE streams locally at [http://127.0.0.1:4040](http://127.0.0.1:4040).
-3. **Ngrok Warning Screen Bypass**: The frontend automatically sends `ngrok-skip-browser-warning: 1` on all fetch and SSE calls so API endpoints are never intercepted by ngrok's interstitial page.
-4. **Free-tier Limits**: Ngrok free accounts have connection rate limits and dynamic ephemeral URLs. For permanent production use, deploy on a VPS with Nginx and a custom domain.
-
-### 12. Backup and Restore Procedures
-
-The persistent state consists of three directories:
-1. **Relational Database**: `rag_company.db` (SQLite) or PostgreSQL.
-2. **ChromaDB Vector Store**: `chroma_data/` directory.
-3. **Uploaded Documents and Figures**: `uploads/` directory.
-
-#### Backup:
-```bash
-# SQLite backup using safe online vacuum/backup
-sqlite3 rag_company.db ".backup 'backups/rag_company_$(date +%F).db'"
-
-# Backup uploads and vector embeddings
-tar -czf "backups/uploads_$(date +%F).tar.gz" uploads/
-tar -czf "backups/chroma_$(date +%F).tar.gz" chroma_data/
-```
-
-#### Restore:
-```bash
-# Stop application service
-sudo systemctl stop rag-chatbot
-
-# Restore database and storage files
-cp backups/rag_company_2026-11-13.db rag_company.db
-tar -xzf backups/uploads_2026-11-13.tar.gz
-tar -xzf backups/chroma_2026-11-13.tar.gz
-
-# Restart application service
-sudo systemctl start rag-chatbot
-```
-
-### 13. Upgrade Instructions
-
-To apply new code versions without losing data:
-```bash
-cd new_chatbot_prod
-
-# Fetch new code
-git pull origin main
-
-# Update dependencies
-./venv/bin/pip install -r requirements.txt
-
-# Restart service (database schema updates run automatically at startup)
-sudo systemctl restart rag-chatbot
-```
-
-### 14. Troubleshooting Guide
-
-| Issue / Symptom | Possible Root Cause | Resolution |
-|---|---|---|
-| **Port already in use (`Errno 98` or `WinError 10048`)** | Another process or old uvicorn worker is bound to port 8000. | Check running processes: `lsof -i :8000` (Linux) or `netstat -ano \| findstr 8000` (Windows). Terminate the conflicting process or change `PORT=8002` in `.env`. |
-| **Model download blocked or slow** | Firewall or network blocking connection to `huggingface.co`. | Run `python scripts/download_models.py` manually with proxy settings `HTTP_PROXY`/`HTTPS_PROXY` configured, or pre-populate the Hugging Face cache in `~/.cache/huggingface/hub`. |
-| **Groq 429 & Rate Limit Reached** | Groq API hourly or daily token limits exceeded. Groq is the only third-party LLM provider. | The application catches Groq rate limits gracefully, backs off, and returns *"The AI service is busy or its usage limit was reached, please try again in a minute"* instead of a 500 error. Check usage at [Groq Console](https://console.groq.com/settings/limits). |
-| **Login loop or cookies rejected** | `COOKIE_SECURE=true` accessed over unencrypted `http://`, or `BEHIND_PROXY=false` behind reverse proxy. | Set `COOKIE_SECURE=false` when accessing over plain HTTP. When behind Nginx or ngrok, set `BEHIND_PROXY=true` and ensure `X-Forwarded-Proto` is forwarded. |
-| **Blank frontend page** | Pre-built SPA assets missing from `frontend/dist/`. | Verify `frontend/dist/index.html` and `frontend/dist/assets/` exist. If rebuilding frontend is desired, install Node.js and run `cd frontend && npm install && npm run build`. |
-| **Server returns HTTP 503 (Server Busy)** | Active concurrent chat streams exceeded `MAX_CONCURRENT_CHATS` (default 6). | The frontend displays *"The server is busy processing other requests, please retry in a moment"*. Slots free up automatically as streaming answers complete. Increase `MAX_CONCURRENT_CHATS` in `.env` if server hardware permits. |
-| **Stale UI bundle after upgrade** | Browser aggressively cached previous JS/CSS assets. | The server sends `Cache-Control: no-cache` for `index.html`. Perform a hard browser reload (`Ctrl+Shift+R` or `Cmd+Shift+R`). |
-| **Old chats or legacy rows failing** | Missing JSON fields or deleted document references from earlier schema versions. | The application runs an automatic, idempotent normalization at startup and at query read time to safely backfill null JSON fields and detach dangling document chips without losing user data. |
-| **Missing Environment Variables on Startup** | `.env` file does not exist or lacks `ADMIN_EMAIL`. | Run `python scripts/setup.py` to auto-generate `.env` from template with a cryptographically secure random secret and administrative defaults. |
+| `backend/` | FastAPI application, database models, configuration, RAG engine, and API routers. |
+| `backend/routers/` | Endpoint handlers (`auth.py`, `chat.py`, `documents.py`, `admin.py`, `support.py`, etc.). |
+| `backend/rag/` | Vector store client, document parsers, embeddings, visual matcher, and hybrid retrieval. |
+| `frontend/` | React single-page application source (Vite, Tailwind CSS, Lucide icons). |
+| `frontend/dist/` | Pre-compiled static frontend distribution served automatically by FastAPI. |
+| `scripts/` | Operational utilities (`setup.py`, `download_models.py`, `set_password.py`, `prune_users.py`, `manage_docs.py`, `smoke_test.py`). |
+| `tests/` | Automated test suite (68 isolated pytest cases with synthetic database). |
+| `docs/` | Extended deployment (`DEPLOYMENT.md`) and API documentation (`API.md`). |
+| `run.bat` / `run.sh` | Production launch scripts verifying virtual environment and running single-worker Uvicorn. |
 
 ---
 
-## 🧪 Automated Testing
+## 3. System Requirements
 
-### Smoke Tests
-Execute the end-to-end automated smoke test against a running instance:
+- **Operating System**: Linux (Ubuntu 20.04+, Debian 11+, RHEL 8+) or Windows (10/11, Windows Server 2019+).
+- **Python**: Python 3.11 recommended (tested and verified on Python 3.14 on Windows; see Status section).
+- **Memory (RAM)**: Minimum 4 GB RAM (8 GB recommended for concurrent OCR and document parsing).
+- **Disk Space**: 10 GB minimum SSD storage for dependencies, model cache, vector store, and document uploads.
+- **Network**: Internet access required on first boot to download Hugging Face models and EasyOCR weights; continuous outbound HTTPS access required for Groq API calls (`api.groq.com`).
+- **Node.js**: Not required for production deployment (pre-compiled assets reside in `frontend/dist`). Only required if modifying React source files.
+
+---
+
+## 4. Quick Start (Local Setup)
+
+### 4.1 Clone and Environment Setup
+
+```bash
+git clone <repository-url> rag-assistant
+cd rag-assistant
+
+# Linux / macOS
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Windows (Command Prompt / PowerShell)
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 4.2 Initialize Configuration and Download Models
+
+```bash
+# Generates .env with secure random JWT_SECRET and verifies directories
+python scripts/setup.py
+
+# Pre-cache embedding and OCR models locally
+python scripts/download_models.py
+```
+
+### 4.3 Configure Secrets
+
+Edit `.env` and configure your credentials:
+
+```ini
+GROQ_API_KEY=your_groq_api_key_here
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=YourSecureAdminPassword!2026
+```
+
+### 4.4 Start Server
+
+```bash
+# Windows
+run.bat
+
+# Linux
+chmod +x run.sh
+./run.sh
+```
+
+Open your browser to `http://localhost:8000` and sign in with the configured `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+---
+
+## 5. Environment Variables & Configuration
+
+All settings are managed via `.env`. A complete configuration template is available in `.env.example`.
+
+### 5.1 Core Server Settings
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `APP_ENV` | `development` | Yes | `development`, `production`, or `test`. Production strictly enforces secret checks. |
+| `HOST` | `0.0.0.0` | No | Network interface binding for Uvicorn. |
+| `PORT` | `8000` | No | Listening TCP port. |
+| `COOKIE_SECURE` | `false` | Yes | Set `true` ONLY behind HTTPS. Setting `true` on HTTP causes a browser login redirect loop. |
+| `BEHIND_PROXY` | `false` | No | Trust reverse proxy headers (`X-Forwarded-Proto`, `X-Forwarded-For`). |
+| `PUBLIC_URL` | `""` | No | Publicly accessible root URL (e.g. `https://chat.example.com`). |
+| `ALLOWED_ORIGINS`| `http://127.0.0.1:8000,...` | No | Comma-separated CORS allowed origin URLs. |
+| `BUILD_VERSION` | `1.0.0` | No | Deployment release version string. |
+| `COMPANY_NAME` | `Company Assistant` | No | Default company name shown in header and titles. |
+
+### 5.2 Security & Authentication
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `JWT_SECRET` | Auto-generated | Yes | Secret key for JWT signing. Must be changed in production. |
+| `JWT_ALGORITHM` | `HS256` | No | Token signature algorithm. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | No | Access token lifespan in minutes. |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | No | Refresh token lifespan in days. |
+| `ADMIN_EMAIL` | `""` | Yes | Initial administrator email created on first run. |
+| `ADMIN_PASSWORD` | `""` | Yes | Initial administrator password (min 8 chars, weak defaults rejected). |
+
+### 5.3 LLM Provider (Groq)
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `GROQ_API_KEY` | `""` | Yes | Groq API Key. |
+| `GROQ_MODEL` | `qwen/qwen3.8-27b` | No | Primary conversational RAG synthesis model. |
+| `GROQ_FAST_MODEL` | `openai/gpt-oss-20b` | No | Model for query rewriting and fast categorization. |
+| `VISION_MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` | No | Model used for image description queries. |
+| `OPENAI_API_KEY` | `""` | No | Unused fallback placeholder (Groq is the active provider). |
+| `LLM_TEMPERATURE` | `0.2` | No | Generation temperature (0.0 strictly grounded, 1.0 creative). |
+
+### 5.4 Storage & Retrieval
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `DATABASE_URL` | `sqlite:///./rag_company.db` | No | Database connection URL (SQLite or PostgreSQL). |
+| `DATA_DIR` | `data` | No | Base directory for internal persistent files. |
+| `STORAGE_DIR` | `.` | No | Root storage directory. |
+| `CHROMA_DIR` | `chroma_data` | No | Persistent ChromaDB storage path. |
+| `CHROMA_PERSIST_DIR` | `chroma_data` | No | Legacy alias for `CHROMA_DIR`. |
+| `UPLOAD_DIR` | `uploads` | No | Directory for uploaded documents and images. |
+| `LOG_DIR` | `logs` | No | Directory for structured JSON request logs. |
+| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | No | Sentence-transformers vector embedding model. |
+| `SIMILARITY_THRESHOLD` | `0.35` | No | Minimum cosine similarity gate for company retrieval. |
+| `TOP_K_CHUNKS` | `5` | No | Maximum number of chunks returned for generation context. |
+| `USE_HYBRID` | `false` | No | Enable BM25 hybrid keyword retrieval. |
+| `USE_RERANKER` | `false` | No | Enable cross-encoder reranking. |
+
+### 5.5 Image Matching & Concurrency
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `IMAGE_HASH_MAX_DISTANCE` | `12` | No | Maximum Hamming distance for perceptual hash matches. |
+| `SIFT_MIN_INLIERS` | `15` | No | Minimum SIFT homography inliers for visual detection. |
+| `IMAGE_MATCH_MIN_CONFIDENCE` | `0.40` | No | Minimum confidence threshold for image match answers. |
+| `WARMUP_OCR` | `false` | No | Pre-load EasyOCR into memory at server startup. |
+| `MAX_HEAVY_TASKS` | `2` | No | Maximum concurrent heavy tasks (OCR, PDF rendering). |
+| `MAX_CONCURRENT_CHATS` | `6` | No | Maximum concurrent chat streams before queuing. |
+
+### 5.6 SMTP Email & Demo Settings
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `SMTP_HOST` | `""` | No | Outgoing SMTP host (if empty, reset requests use Admin Approval). |
+| `SMTP_PORT` | `587` | No | Outgoing SMTP port. |
+| `SMTP_USER` / `SMTP_PASSWORD` | `""` | No | Outgoing SMTP credentials. |
+| `SMTP_FROM` | `""` | No | From email address. |
+| `SMTP_TLS` | `true` | No | Use TLS for SMTP connection. |
+| `SEED_DEMO_USERS` | `false` | No | Seed demo users (strictly rejected when `APP_ENV=production`). |
+| `DEMO_ADMIN_EMAIL` | `""` | No | Demo administrator email (dev only). |
+| `DEMO_ADMIN_PASSWORD` | `""` | No | Demo administrator password (dev only). |
+| `DEMO_USER_EMAIL` | `""` | No | Demo standard user email (dev only). |
+| `DEMO_USER_PASSWORD` | `""` | No | Demo standard user password (dev only). |
+| `DEMO_MODE` | `false` | No | Display demo credentials helper on login (rejected in production). |
+
+---
+
+## 6. Administration & Operational CLI Tools
+
+### 6.1 Administrator Seeding and Password Management
+
+- The first administrator is created automatically on initial boot using `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+- If an administrator is locked out or credentials need emergency rotation, use `scripts/set_password.py`:
+
+```bash
+# Non-echoing hidden password entry (requires >= 12 characters)
+python scripts/set_password.py admin@example.com
+```
+
+### 6.2 Managing Documents via CLI (`scripts/manage_docs.py`)
+
+```bash
+# List all documents with file existence and Chroma vector chunk counts
+python scripts/manage_docs.py list
+
+# Dry-run document deletion
+python scripts/manage_docs.py delete --ids <doc-id-1> <doc-id-2>
+
+# Execute permanent document deletion (database, ChromaDB, and disk files)
+python scripts/manage_docs.py delete --ids <doc-id-1> <doc-id-2> --apply
+```
+
+### 6.3 Pruning Users via CLI (`scripts/prune_users.py`)
+
+Prunes all users except specified accounts, reassigning company documents to the primary admin and cascading private records:
+
+```bash
+# Step 1: Dry run (prints plan without changing data)
+python scripts/prune_users.py --keep admin@example.com user@example.com
+
+# Step 2: Execute pruning (creates backup in backups/ automatically)
+python scripts/prune_users.py --keep admin@example.com user@example.com --apply
+```
+
+---
+
+## 7. Production Deployment Overview
+
+For detailed systemd service files, Nginx reverse proxy configurations, and automated backup scripts, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+### Essential Deployment Rules
+
+1. **Single Worker Process**: Run Uvicorn with `workers=1`. In-process pub/sub (`/api/events`) and chat concurrency control require a single worker.
+2. **Reverse Proxy Buffering**: Nginx must disable proxy buffering for SSE routes (`/api/chat/messages` and `/api/events`):
+   ```nginx
+   location /api/chat/messages {
+       proxy_buffering off;
+       chunked_transfer_encoding on;
+       proxy_pass http://127.0.0.1:8000;
+   }
+   ```
+3. **Cookie Security**: Ensure `COOKIE_SECURE=true` is set only when accessing via HTTPS with valid TLS certificates.
+
+---
+
+## 8. Security Architecture
+
+- **HTTP-Only, SameSite Cookies**: Authentication tokens are stored in `httpOnly`, `SameSite=Lax` cookies, preventing XSS token exfiltration.
+- **Password Protection**: Passwords hashed using `bcrypt` (12 rounds).
+- **Session Revocation (Token Versioning)**: Modifying a user's password or deactivating their account increments `token_version`, instantly invalidating active sessions.
+- **Request Rate Limiting**: Managed via `SlowAPI` with user and IP fallback keys.
+- **Data Isolation**: Private documents, conversations, and messages are strictly scoped by user ID with database-level relational constraints.
+
+---
+
+## 9. API Overview
+
+For detailed schemas and Server-Sent Events specifications, see [docs/API.md](docs/API.md).
+
+| Group | Base Path | Description |
+|---|---|---|
+| **Auth** | `/api/auth` | Login, registration, token refresh, logout, password resets. |
+| **Conversations** | `/api/conversations` | CRUD operations for chat sessions. |
+| **Chat Stream** | `/api/chat/messages` | SSE token streaming with citations and visual grounding. |
+| **Documents** | `/api/documents` | Multi-format upload, status tracking, downloading, deletion. |
+| **Admin** | `/api/admin` | User management, audit logs, diagnostics, analytics, branding. |
+| **Support** | `/api/support` | User-to-admin request threads ("Ask Admin"). |
+| **Notifications** | `/api/notifications`| User in-app notifications. |
+| **Events** | `/api/events` | SSE real-time push stream for notifications and state changes. |
+| **Health** | `/health`, `/api/health`| System liveness, database status, memory, and vector health. |
+
+---
+
+## 10. Automated Testing
+
+### 10.1 Running Unit and Integration Tests (pytest)
+
+The test suite runs against an isolated in-memory or temporary SQLite database, temporary Chroma directory, and mock uploads. Real database files (`rag_company.db`) are never accessed.
+
+```bash
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run test suite
+pytest -q
+```
+
+*Result of latest test run: **68 passed**.*
+
+### 10.2 Smoke Testing (`scripts/smoke_test.py`)
+
+The automated smoke test verifies end-to-end functionality (health, authentication, document upload, RAG streaming, image matching, user isolation, and fallback responses).
+
+> **Important**: Never run `smoke_test.py` against a production database. It creates temporary users, uploads test documents, and modifies branding during execution. Run against a local test instance only:
+
 ```bash
 python scripts/smoke_test.py --url http://127.0.0.1:8000
 ```
 
-### Pytest Unit & Integration Tests
-Run the automated pytest suite (all tests run in an isolated temporary environment without touching production data):
-```bash
-pytest -q
-```
+---
+
+## 11. Troubleshooting Guide
+
+| Issue | Root Cause | Solution |
+|---|---|---|
+| `Address already in use` (Port 8000) | Another process is bound to port 8000. | Change `PORT` in `.env` or terminate the competing process. |
+| Model download fails or hangs | Firewall or corporate proxy blocking Hugging Face. | Set `HF_HUB_ENABLE_HF_TRANSFER=0` or configure `HTTP_PROXY`/`HTTPS_PROXY` in environment. |
+| `Groq Rate Limit (429)` | Daily token or RPM quota exceeded on Groq API. | The assistant displays a friendly fallback notice. Upgrade Groq tier or adjust `MAX_CONCURRENT_CHATS`. |
+| Login Loop (Redirects back to login) | `COOKIE_SECURE=true` set over plain HTTP. | Set `COOKIE_SECURE=false` in `.env` if accessing over HTTP without TLS. |
+| Chat tokens arrive all at once | Proxy buffering enabled in reverse proxy. | Set `proxy_buffering off;` and `chunked_transfer_encoding on;` in Nginx for `/api/chat/messages`. Note: free Cloudflare Quick Tunnels buffer SSE. |
+| `No module named dotenv` | Script executed outside the virtual environment. | Activate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) before running scripts. |
+| High Memory / Out of Memory | Heavy concurrent OCR or PDF rendering. | Reduce `MAX_HEAVY_TASKS=1` in `.env` and ensure `WARMUP_OCR=false`. |
+| Administrator locked out | Lost admin password. | Run `python scripts/set_password.py <admin-email>` to reset the password directly via CLI. |
+
+---
+
+## 12. Verification Status & Known Limitations
+
+### Verified Configurations
+
+| Component | Status | Details |
+|---|---|---|
+| **Operating System** | Verified | Windows 10/11 x64. |
+| **Python Version** | Verified | Python 3.14.3. |
+| **Test Suite** | Verified | 68 passed tests (`pytest -q`). |
+| **Build & Packaging** | Verified | Frontend built via Vite 5 (`npm run build`); zero bundling errors. |
+| **Offline CLI Tools** | Verified | `scripts/setup.py`, `scripts/download_models.py`, `scripts/manage_docs.py`, `scripts/prune_users.py`, `scripts/set_password.py`. |
+
+### Unverified Environments
+
+- **Linux / Docker**: Core code is POSIX-compliant, but automated validation was conducted on Windows.
+- **Python 3.11**: Recommended target version; development occurred on 3.14.
+- **Multi-Worker Scale**: Multi-worker Uvicorn (`workers > 1`) is unsupported due to SQLite locking and the in-process pub/sub event bus.
+
+### Known Limitations
+
+1. **Concurrency**: Designed for enterprise workgroups (up to ~50 active users on a single machine). High concurrency requires external pub/sub (e.g. Redis) and PostgreSQL.
+2. **SQLite Concurrency**: Default SQLite setup supports multiple concurrent readers but serializes writes.
+
+---
+
+## 13. License & Maintenance
+
+This software is distributed under internal enterprise licensing. For operational inquiries, issue reporting, or deployment assistance, please contact your systems administration team.
