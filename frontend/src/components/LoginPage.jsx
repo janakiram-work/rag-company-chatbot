@@ -10,6 +10,7 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
   const [error, setError] = useState(initialError);
   const [countdown, setCountdown] = useState(0);
   const [demoMode, setDemoMode] = useState(false);
+  const [demoCreds, setDemoCreds] = useState(null);
 
   useEffect(() => {
     fetch('/api/config')
@@ -17,6 +18,12 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
       .then((cfg) => {
         if (cfg && cfg.demo_mode) {
           setDemoMode(true);
+          setDemoCreds({
+            adminEmail: cfg.demo_admin_email || '',
+            adminPassword: cfg.demo_admin_password || '',
+            userEmail: cfg.demo_user_email || '',
+            userPassword: cfg.demo_user_password || '',
+          });
         }
       })
       .catch(() => {});
@@ -113,7 +120,7 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => fillCredentials('admin@abctechnologies.com', 'Admin@123')}
+                onClick={() => fillCredentials(demoCreds?.adminEmail || '', demoCreds?.adminPassword || '')}
                 className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 transition"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -121,7 +128,7 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
               </button>
               <button
                 type="button"
-                onClick={() => fillCredentials('user@abctechnologies.com', 'User@123')}
+                onClick={() => fillCredentials(demoCreds?.userEmail || '', demoCreds?.userPassword || '')}
                 className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 hover:bg-blue-200 transition"
               >
                 <UserCheck className="w-3.5 h-3.5" />

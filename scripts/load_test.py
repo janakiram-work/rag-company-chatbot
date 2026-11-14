@@ -130,7 +130,7 @@ def simulate_user(user_idx: int, base_url: str, questions: list):
 def simulate_admin(base_url: str):
     """Simulate admin exercising all admin endpoints concurrently."""
     admin_email = os.getenv("ADMIN_EMAIL", "admin@abctechnologies.com")
-    admin_password = os.getenv("ADMIN_PASSWORD", "Admin@123")
+    admin_password = os.getenv("ADMIN_PASSWORD", "AdminSecurePass!2026")
 
     session = requests.Session()
     session.headers.update({

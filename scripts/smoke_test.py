@@ -41,7 +41,7 @@ class SmokeTestRunner:
 
         # Credentials
         self.admin_email = os.getenv("ADMIN_EMAIL", "admin@abctechnologies.com")
-        self.admin_password = os.getenv("ADMIN_PASSWORD", "Admin@123")
+        self.admin_password = os.getenv("ADMIN_PASSWORD", "AdminSecurePass!2026")
         self.test_password = os.getenv("TEST_USER_PASSWORD", "SmokeTestPass@123")
 
         ts = int(time.time())

@@ -15,6 +15,11 @@ from backend.config import (
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
     APP_ENV,
+    SEED_DEMO_USERS,
+    DEMO_ADMIN_EMAIL,
+    DEMO_ADMIN_PASSWORD,
+    DEMO_USER_EMAIL,
+    DEMO_USER_PASSWORD,
 )
 from backend.database import get_db, User
 
@@ -131,9 +136,22 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+FORBIDDEN_ADMIN_PASSWORDS = {"admin@123", "admin123", "password"}
+
+
 def seed_default_users(db: Session):
-    """Seed the admin from ADMIN_EMAIL and ADMIN_PASSWORD only if no admin exists."""
-    if ADMIN_EMAIL and ADMIN_PASSWORD:
+    """Seed the admin from ADMIN_EMAIL and ADMIN_PASSWORD only if configured and valid.
+    Never seed any baseline or demo user unless SEED_DEMO_USERS=true.
+    """
+    # 1. Configured Admin Account
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        print("[startup INFO] ADMIN_EMAIL or ADMIN_PASSWORD not configured. Initial admin account seeding skipped.")
+    elif len(ADMIN_PASSWORD) < 8 or ADMIN_PASSWORD.lower() in FORBIDDEN_ADMIN_PASSWORDS:
+        print(
+            "[startup ERROR] ADMIN_PASSWORD was refused because it is shorter than 8 characters "
+            "or matches a known weak default. Admin account seeding skipped."
+        )
+    else:
         existing_admin = db.query(User).filter(User.email == ADMIN_EMAIL).first()
         if not existing_admin:
             admin_user = User(
@@ -142,28 +160,36 @@ def seed_default_users(db: Session):
                 role="admin",
             )
             db.add(admin_user)
-    else:
-        print("[startup INFO] ADMIN_EMAIL or ADMIN_PASSWORD not configured. Initial admin account seeding skipped.")
+            db.flush()
 
-    # Ensure baseline admin exists for dev/test environments if custom throwaway admin used
-    if APP_ENV != "production" and ADMIN_EMAIL != "admin@abctechnologies.com":
-        fallback_admin = db.query(User).filter(User.email == "admin@abctechnologies.com").first()
-        if not fallback_admin:
-            db.add(User(
-                email="admin@abctechnologies.com",
-                password_hash=get_password_hash("Admin@123"),
-                role="admin",
-            ))
-
-    # Check Regular User (used for testing and baseline user access)
-    user_email = "user@abctechnologies.com"
-    regular = db.query(User).filter(User.email == user_email).first()
-    if not regular:
-        reg_user = User(
-            email=user_email,
-            password_hash=get_password_hash("User@123"),
-            role="user",
-        )
-        db.add(reg_user)
+    # 2. Demo User Accounts (only when SEED_DEMO_USERS=true, refused in production)
+    if SEED_DEMO_USERS:
+        if APP_ENV == "production":
+            print("[startup ERROR] Refusing SEED_DEMO_USERS=true when APP_ENV=production. Demo user seeding aborted.")
+        elif not (DEMO_ADMIN_EMAIL and DEMO_ADMIN_PASSWORD and DEMO_USER_EMAIL and DEMO_USER_PASSWORD):
+            print(
+                "[startup INFO] SEED_DEMO_USERS=true but one or more required demo environment variables "
+                "are missing (DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD, DEMO_USER_EMAIL, DEMO_USER_PASSWORD). "
+                "Skipping demo user seeding."
+            )
+        else:
+            # Seed demo admin if not exists
+            demo_admin = db.query(User).filter(User.email == DEMO_ADMIN_EMAIL).first()
+            if not demo_admin:
+                db.add(User(
+                    email=DEMO_ADMIN_EMAIL,
+                    password_hash=get_password_hash(DEMO_ADMIN_PASSWORD),
+                    role="admin",
+                ))
+                db.flush()
+            # Seed demo regular user if not exists
+            demo_user = db.query(User).filter(User.email == DEMO_USER_EMAIL).first()
+            if not demo_user:
+                db.add(User(
+                    email=DEMO_USER_EMAIL,
+                    password_hash=get_password_hash(DEMO_USER_PASSWORD),
+                    role="user",
+                ))
+                db.flush()
 
     db.commit()

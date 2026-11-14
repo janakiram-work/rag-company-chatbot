@@ -1,3 +1,4 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
@@ -77,7 +78,7 @@ def test_auth_routes():
     # 6. Login with seeded admin
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "admin@abctechnologies.com", "password": "Admin@123"},
+        json={"email": "admin@abctechnologies.com", "password": os.getenv("ADMIN_PASSWORD", "AdminTestSecurePass!2026")},
     )
     assert admin_login.status_code == 200
     assert admin_login.json()["user"]["role"] == "admin"

@@ -3,7 +3,26 @@ import shutil
 import tempfile
 import pytest
 
+# Set demo and admin environment variables explicitly for the test suite
+os.environ["APP_ENV"] = "test"
+os.environ["SEED_DEMO_USERS"] = "true"
+os.environ["DEMO_ADMIN_EMAIL"] = "admin@abctechnologies.com"
+os.environ["DEMO_ADMIN_PASSWORD"] = "AdminTestSecurePass!2026"
+os.environ["DEMO_USER_EMAIL"] = "user@abctechnologies.com"
+os.environ["DEMO_USER_PASSWORD"] = "UserTestSecurePass!2026"
+os.environ["ADMIN_EMAIL"] = "admin@abctechnologies.com"
+os.environ["ADMIN_PASSWORD"] = "AdminTestSecurePass!2026"
+
 import backend.config as cfg
+cfg.APP_ENV = "test"
+cfg.SEED_DEMO_USERS = True
+cfg.DEMO_ADMIN_EMAIL = "admin@abctechnologies.com"
+cfg.DEMO_ADMIN_PASSWORD = "AdminTestSecurePass!2026"
+cfg.DEMO_USER_EMAIL = "user@abctechnologies.com"
+cfg.DEMO_USER_PASSWORD = "UserTestSecurePass!2026"
+cfg.ADMIN_EMAIL = "admin@abctechnologies.com"
+cfg.ADMIN_PASSWORD = "AdminTestSecurePass!2026"
+
 import backend.rag.vector_store as vs
 
 

@@ -42,6 +42,10 @@ from backend.config import (
     BUILD_VERSION,
     BEHIND_PROXY,
     WARMUP_OCR,
+    DEMO_ADMIN_EMAIL,
+    DEMO_ADMIN_PASSWORD,
+    DEMO_USER_EMAIL,
+    DEMO_USER_PASSWORD,
 )
 from backend.database import init_db, SessionLocal, Document, get_db
 from backend.auth import seed_default_users, get_user_from_token_str
@@ -261,12 +265,18 @@ def serve_image(
 
 @app.get("/api/config")
 def get_app_config():
-    return {
+    config_data = {
         "company_name": COMPANY_NAME,
         "assistant_intro": "I can answer questions about the company documents you have access to.",
-        "demo_mode": DEMO_MODE,
+        "demo_mode": DEMO_MODE and APP_ENV != "production",
         "build_version": BUILD_VERSION,
     }
+    if DEMO_MODE and APP_ENV != "production":
+        config_data["demo_admin_email"] = DEMO_ADMIN_EMAIL
+        config_data["demo_admin_password"] = DEMO_ADMIN_PASSWORD
+        config_data["demo_user_email"] = DEMO_USER_EMAIL
+        config_data["demo_user_password"] = DEMO_USER_PASSWORD
+    return config_data
 
 
 def check_system_health():

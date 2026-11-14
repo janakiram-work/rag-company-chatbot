@@ -89,14 +89,11 @@ A production-ready Retrieval-Augmented Generation (RAG) multimodal enterprise ch
 
 ---
 
-## 🔑 Default User Accounts (Auto-Seeded)
+## 🔑 Administrator & Account Seeding
 
-The database automatically seeds default accounts on initial startup if no admin exists (configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`):
-
-| Role | Email | Password | Permissions |
-|---|---|---|---|
-| **Admin** | `admin@abctechnologies.com` | `Admin@123` | Full dashboard, company docs management, user audit, floating chat |
-| **Regular User** | `user@abctechnologies.com` | `User@123` | Chat, upload personal docs, past chats history |
+The database seeds an administrator account on initial startup only when `ADMIN_EMAIL` and `ADMIN_PASSWORD` are configured in `.env`.
+- **Security Check**: `ADMIN_PASSWORD` must be at least 8 characters and cannot be a common default (`admin@123`, `admin123`, `password`). Weak passwords are explicitly refused on startup.
+- **Demo Users**: Baseline/demo accounts are never seeded unless `SEED_DEMO_USERS=true` in `.env` (strictly forbidden when `APP_ENV=production`). Demo accounts read credentials from `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD`, `DEMO_USER_EMAIL`, and `DEMO_USER_PASSWORD`.
 
 *(Registration via `/register` or the UI always assigns `role="user"` for security).*
 
@@ -204,8 +201,9 @@ Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRE
 | `JWT_ALGORITHM` | `HS256` | JWT signing algorithm. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access token lifespan in minutes. |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifespan in days. |
-| `ADMIN_EMAIL` | `admin@abctechnologies.com` | Initial admin account email seeded on first startup. |
-| `ADMIN_PASSWORD` | `Admin@123` | Initial admin password seeded on first startup. |
+| `ADMIN_EMAIL` | *(None / configured in .env)* | Initial admin account email seeded on first startup. |
+| `ADMIN_PASSWORD` | *(None / configured in .env)* | Initial admin password seeded on first startup (minimum 8 chars, common defaults refused). |
+| `SEED_DEMO_USERS` | `false` | When `true` (and `APP_ENV!=production`), seeds demo accounts from `DEMO_*` environment variables. |
 | `DATABASE_URL` | `sqlite:///./rag_company.db` | SQLAlchemy connection URL (`sqlite:///./rag_company.db` or PostgreSQL `postgresql://user:pass@host:5432/dbname`). |
 | `CHROMA_DIR` | `chroma_data` | Directory for persistent ChromaDB vector store. |
 | `UPLOAD_DIR` | `uploads` | Root directory for stored documents, images, and rendered pages. |
