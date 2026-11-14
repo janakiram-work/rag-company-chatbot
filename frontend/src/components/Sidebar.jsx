@@ -117,7 +117,7 @@ export default function Sidebar({
                   <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`} />
                   <span className="truncate">{c.title || 'Untitled Chat'}</span>
                 </div>
-                {c.active_doc_id && (
+                {c.active_doc_id && c.active_doc_name && (
                   <span title="Document filter active" className="text-emerald-600 dark:text-emerald-400 flex-shrink-0">
                     <Filter className="w-3 h-3" />
                   </span>

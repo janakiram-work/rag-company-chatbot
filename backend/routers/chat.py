@@ -77,6 +77,54 @@ def generate_conversation_title(query: str) -> str:
         return " ".join(words[:6]) if words else "Conversation"
 
 
+def sanitize_conversation_attachments(conv: Conversation, current_user: User, db: Session) -> Tuple[List[Document], bool]:
+    """
+    Validates all attached documents for a conversation.
+    If any attached document is missing from the database or not accessible to current_user,
+    ignores it, removes it from the conversation, and returns (valid_docs, missing_detected).
+    Never raises 403 for missing or inaccessible documents.
+    """
+    cds = (
+        db.query(ConversationDocument)
+        .filter(ConversationDocument.conversation_id == conv.id)
+        .order_by(ConversationDocument.attached_at.asc())
+        .all()
+    )
+    valid_docs: List[Document] = []
+    stale_cd_ids = []
+    missing_detected = False
+
+    for cd in cds:
+        d = db.query(Document).filter(Document.id == cd.doc_id).first()
+        if not d or (d.scope == "user" and d.owner_id != current_user.id and current_user.role != "admin"):
+            missing_detected = True
+            stale_cd_ids.append(cd.id)
+        else:
+            if d not in valid_docs:
+                valid_docs.append(d)
+
+    if conv.active_doc_id:
+        active_d = db.query(Document).filter(Document.id == conv.active_doc_id).first()
+        if not active_d or (active_d.scope == "user" and active_d.owner_id != current_user.id and current_user.role != "admin"):
+            missing_detected = True
+            conv.active_doc_id = None
+        else:
+            if active_d not in valid_docs:
+                valid_docs.append(active_d)
+
+    if stale_cd_ids:
+        db.query(ConversationDocument).filter(ConversationDocument.id.in_(stale_cd_ids)).delete(synchronize_session=False)
+
+    if missing_detected:
+        if valid_docs:
+            conv.active_doc_id = valid_docs[-1].id
+        else:
+            conv.active_doc_id = None
+        db.commit()
+
+    return valid_docs, missing_detected
+
+
 @router.get("", response_model=List[ConversationResponse])
 def list_user_conversations(
     current_user: User = Depends(get_current_user),
@@ -90,24 +138,22 @@ def list_user_conversations(
     )
     results = []
     for c in convs:
-        # Do not list empty conversation rows with 0 messages unless it has an active attached doc
-        attached_cds = (
+        active_doc = None
+        if c.active_doc_id:
+            d = db.query(Document).filter(Document.id == c.active_doc_id).first()
+            if d and (d.scope == "company" or d.owner_id == current_user.id or current_user.role == "admin"):
+                active_doc = d
+
+        cds = (
             db.query(ConversationDocument)
             .filter(ConversationDocument.conversation_id == c.id)
             .order_by(ConversationDocument.attached_at.asc())
             .all()
         )
-        if len(c.messages) == 0 and not c.active_doc_id and not attached_cds:
-            continue
-        doc_name = None
-        if c.active_doc_id:
-            d = db.query(Document).filter(Document.id == c.active_doc_id).first()
-            doc_name = d.filename if d else None
-
         attached_items = []
-        for cd in attached_cds:
+        for cd in cds:
             d = db.query(Document).filter(Document.id == cd.doc_id).first()
-            if d:
+            if d and (d.scope == "company" or d.owner_id == current_user.id or current_user.role == "admin"):
                 attached_items.append(
                     AttachedDocumentItem(
                         id=d.id,
@@ -117,24 +163,19 @@ def list_user_conversations(
                         attached_at=cd.attached_at,
                     )
                 )
-        if not attached_items and c.active_doc_id:
-            d = db.query(Document).filter(Document.id == c.active_doc_id).first()
-            if d:
-                attached_items.append(
-                    AttachedDocumentItem(
-                        id=d.id,
-                        filename=d.filename,
-                        file_type=d.file_type,
-                        status=d.status,
-                        attached_at=c.created_at,
-                    )
-                )
+
+        # Do not list empty conversation rows with 0 messages unless it has an active attached doc
+        if len(c.messages) == 0 and not active_doc and not attached_items:
+            continue
+
+        doc_name = active_doc.filename if active_doc else (attached_items[-1].filename if attached_items else None)
+        active_id = active_doc.id if active_doc else (attached_items[-1].id if attached_items else None)
 
         results.append(
             ConversationResponse(
                 id=c.id,
                 title=c.title,
-                active_doc_id=c.active_doc_id,
+                active_doc_id=active_id,
                 active_doc_name=doc_name,
                 attached_documents=attached_items,
                 created_at=c.created_at,
@@ -209,22 +250,22 @@ def get_conversation_history(
     if conv.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Access denied")
 
-    doc_name = None
+    active_doc = None
     if conv.active_doc_id:
         d = db.query(Document).filter(Document.id == conv.active_doc_id).first()
-        doc_name = d.filename if d else None
+        if d and (d.scope == "company" or d.owner_id == current_user.id or current_user.role == "admin"):
+            active_doc = d
 
-    # Load attached documents
-    attached_cds = (
+    cds = (
         db.query(ConversationDocument)
         .filter(ConversationDocument.conversation_id == conv.id)
         .order_by(ConversationDocument.attached_at.asc())
         .all()
     )
     attached_items = []
-    for cd in attached_cds:
+    for cd in cds:
         d = db.query(Document).filter(Document.id == cd.doc_id).first()
-        if d:
+        if d and (d.scope == "company" or d.owner_id == current_user.id or current_user.role == "admin"):
             attached_items.append(
                 AttachedDocumentItem(
                     id=d.id,
@@ -234,18 +275,9 @@ def get_conversation_history(
                     attached_at=cd.attached_at,
                 )
             )
-    if not attached_items and conv.active_doc_id:
-        d = db.query(Document).filter(Document.id == conv.active_doc_id).first()
-        if d:
-            attached_items.append(
-                AttachedDocumentItem(
-                    id=d.id,
-                    filename=d.filename,
-                    file_type=d.file_type,
-                    status=d.status,
-                    attached_at=conv.created_at,
-                )
-            )
+
+    doc_name = active_doc.filename if active_doc else (attached_items[-1].filename if attached_items else None)
+    active_id = active_doc.id if active_doc else (attached_items[-1].id if attached_items else None)
 
     # Load messages
     messages = []
@@ -286,7 +318,7 @@ def get_conversation_history(
     return ConversationResponse(
         id=conv.id,
         title=conv.title,
-        active_doc_id=conv.active_doc_id,
+        active_doc_id=active_id,
         active_doc_name=doc_name,
         attached_documents=attached_items,
         created_at=conv.created_at,
@@ -304,9 +336,11 @@ def delete_conversation(
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    if conv.user_id != current_user.id and current_user.role != "admin":
+    if conv.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    db.query(ConversationDocument).filter(ConversationDocument.conversation_id == conv.id).delete(synchronize_session=False)
+    db.query(Message).filter(Message.conversation_id == conv.id).delete(synchronize_session=False)
     db.delete(conv)
     db.commit()
     return {"status": "success", "message": "Conversation deleted"}
@@ -394,8 +428,6 @@ def clear_all_conversation_documents(
     conv.active_doc_id = None
     db.commit()
     return {"status": "success", "message": "All attachments cleared. Returned to company scope."}
-    db.commit()
-    return {"status": "success", "message": "Conversation deleted"}
 
 
 @router.put("/{conversation_id}/filter")
@@ -414,10 +446,14 @@ def update_conversation_filter(
 
     if doc_id:
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        if doc.scope == "user" and doc.owner_id != current_user.id and current_user.role != "admin":
-            raise HTTPException(status_code=403, detail="Document access denied")
+        if not doc or (doc.scope == "user" and doc.owner_id != current_user.id and current_user.role != "admin"):
+            conv.active_doc_id = None
+            db.query(ConversationDocument).filter(
+                ConversationDocument.conversation_id == conv.id,
+                ConversationDocument.doc_id == doc_id,
+            ).delete()
+            db.commit()
+            return {"status": "success", "active_doc_id": None, "note": "The attached document is no longer available"}
         conv.active_doc_id = doc_id
         exists = db.query(ConversationDocument).filter(
             ConversationDocument.conversation_id == conv.id,
@@ -520,19 +556,8 @@ async def send_chat_message_stream(
     # Get conversation memory (running summary + last 8 messages) offloaded from event loop
     summary, recent_messages = await asyncio.to_thread(get_conversation_memory, conv, db, 8)
 
-    # Fetch all attached documents for this conversation strictly filtered by active chat/conversation ID
-    attached_docs_list = (
-        db.query(Document)
-        .join(ConversationDocument, ConversationDocument.doc_id == Document.id)
-        .filter(ConversationDocument.conversation_id == conv.id)
-        .order_by(ConversationDocument.attached_at.asc())
-        .all()
-    )
-    if not attached_docs_list and conv.active_doc_id:
-        active_d = db.query(Document).filter(Document.id == conv.active_doc_id).first()
-        if active_d:
-            attached_docs_list = [active_d]
-
+    # Fetch all attached documents, sanitizing missing or inaccessible ones
+    attached_docs_list, missing_doc_detected = sanitize_conversation_attachments(conv, current_user, db)
     conv_attached_ids = [d.id for d in attached_docs_list]
     attached_img_docs = [d for d in attached_docs_list if d.file_type in ("png", "jpg", "jpeg")]
 
@@ -564,6 +589,10 @@ async def send_chat_message_stream(
                 await send_event(f"data: {json.dumps({'type': 'status', 'message': 'Thinking...'})}\n\n")
 
                 full_content_chunks = []
+                if missing_doc_detected:
+                    note = "The attached document is no longer available\n\n"
+                    full_content_chunks.append(note)
+                    await send_event(f"data: {json.dumps({'type': 'token', 'content': note})}\n\n")
                 final_sources = []
                 final_images = []
                 final_meta = None

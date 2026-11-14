@@ -115,17 +115,55 @@ async function request(url, options = {}, isRetry = false) {
     throw new Error('The server returned an unexpected response, please reload');
   }
 
+  // Handle 204 No Content immediately
+  if (res.status === 204) {
+    if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+    return null;
+  }
+
+  // Read response body ONCE as text
+  let rawText = '';
+  try {
+    rawText = await res.text();
+  } catch {
+    rawText = '';
+  }
+
+  // Parse JSON safely if content exists
+  let parsedJson = null;
+  if (rawText && rawText.trim()) {
+    try {
+      parsedJson = JSON.parse(rawText);
+    } catch {
+      parsedJson = null;
+    }
+  }
+
+  const extractError = (fallbackMsg = 'Request failed') => {
+    if (parsedJson) {
+      if (typeof parsedJson === 'string') return parsedJson;
+      if (parsedJson.detail) {
+        if (typeof parsedJson.detail === 'string') return parsedJson.detail;
+        if (Array.isArray(parsedJson.detail)) {
+          return parsedJson.detail.map((d) => d.msg || d.message || JSON.stringify(d)).join(', ');
+        }
+        return JSON.stringify(parsedJson.detail);
+      }
+      if (parsedJson.message) return parsedJson.message;
+      if (parsedJson.error) return parsedJson.error;
+    }
+    if (rawText && rawText.trim() && !rawText.trim().startsWith('<')) {
+      return rawText.trim();
+    }
+    return fallbackMsg;
+  };
+
   if (res.status === 401) {
     if (isAuthEndpoint) {
       if (url.includes('/auth/login')) {
         throw new Error('Invalid email or password');
       }
-      let errDetail = 'Unauthorized';
-      try {
-        const errJson = await res.json();
-        errDetail = errJson.detail || errJson.message || errDetail;
-      } catch {}
-      throw new Error(errDetail);
+      throw new Error(extractError('Unauthorized'));
     }
 
     const hadPriorSession = !!getAuthToken() || !!getStoredUser();
@@ -173,40 +211,21 @@ async function request(url, options = {}, isRetry = false) {
       throw new Error('Your session ended, please sign in again');
     }
 
-    let errDetail = 'Unauthorized';
-    try {
-      const errJson = await res.json();
-      errDetail = errJson.detail || errJson.message || errDetail;
-    } catch {}
-    throw new Error(errDetail);
+    throw new Error(extractError('Unauthorized'));
   }
 
   if (res.status === 429) {
-    let errDetail = 'Too many attempts. Try again in 60 seconds';
-    try {
-      const errJson = await res.json();
-      errDetail = errJson.detail || errJson.message || errDetail;
-    } catch {
-      errDetail = (await res.text()) || errDetail;
-    }
-    throw new Error(errDetail);
+    throw new Error(extractError('Too many attempts. Try again in 60 seconds'));
   }
 
   if (!res.ok) {
-    let errorDetail = 'Request failed';
-    try {
-      const errJson = await res.json();
-      errorDetail = errJson.detail || errJson.message || errorDetail;
-    } catch {
-      errorDetail = (await res.text()) || errorDetail;
-    }
-    throw new Error(errorDetail);
+    throw new Error(extractError(`Request failed with status ${res.status}`));
   }
 
-  if (contentType.includes('application/json')) {
-    return res.json();
+  if (parsedJson !== null) {
+    return parsedJson;
   }
-  return res.text();
+  return rawText;
 }
 
 // Config & Branding

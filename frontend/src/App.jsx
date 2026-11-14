@@ -11,6 +11,7 @@ import {
   getAuthToken,
   getStoredUser,
   removeAuthToken,
+  formatError,
   apiGetMe,
   apiLogout,
   apiGetConversations,

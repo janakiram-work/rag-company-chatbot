@@ -99,18 +99,23 @@ export default function ChatArea({
         setMessages(conversation.messages || []);
         setStatusText('');
         if (conversation.attached_documents && conversation.attached_documents.length > 0) {
-          setAttachedDocs(conversation.attached_documents);
-          setActiveDocFilter({
-            id: conversation.attached_documents[conversation.attached_documents.length - 1].id,
-            name: conversation.attached_documents[conversation.attached_documents.length - 1].filename,
-          });
-        } else if (conversation.active_doc_id) {
+          const validDocs = conversation.attached_documents.filter((d) => d && d.id && d.filename);
+          setAttachedDocs(validDocs);
+          if (validDocs.length > 0) {
+            setActiveDocFilter({
+              id: validDocs[validDocs.length - 1].id,
+              name: validDocs[validDocs.length - 1].filename,
+            });
+          } else {
+            setActiveDocFilter(null);
+          }
+        } else if (conversation.active_doc_id && conversation.active_doc_name) {
           setAttachedDocs([
-            { id: conversation.active_doc_id, filename: conversation.active_doc_name || 'Attached Document' },
+            { id: conversation.active_doc_id, filename: conversation.active_doc_name },
           ]);
           setActiveDocFilter({
             id: conversation.active_doc_id,
-            name: conversation.active_doc_name || 'Attached Document',
+            name: conversation.active_doc_name,
           });
         } else {
           setAttachedDocs([]);
@@ -673,7 +678,7 @@ export default function ChatArea({
                                   />
                                   <div className="img-fallback hidden py-10 px-4 text-center text-xs text-gray-400 dark:text-zinc-500 flex flex-col items-center gap-1">
                                     <ImageOff className="w-6 h-6 text-gray-300 dark:text-zinc-600 mb-1" />
-                                    <span>Image preview unavailable</span>
+                                    <span>Image no longer available</span>
                                   </div>
                                   <div className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-lg opacity-0 group-hover:opacity-100 transition shadow">
                                     <Maximize2 className="w-3.5 h-3.5" />
