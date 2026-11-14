@@ -128,6 +128,31 @@ def backup_sqlite_db(db_file_path: str, backup_dir: str = "backups") -> Optional
     return backup_file
 
 
+def resolve_document_filepath(
+    doc_id: str,
+    doc_filename: str,
+    stored_filepath: Optional[str],
+    upload_dir: str,
+) -> Optional[str]:
+    """Resolve the physical location of a document file on disk."""
+    if stored_filepath and os.path.exists(stored_filepath):
+        return stored_filepath
+    docs_dir = os.path.join(upload_dir, "docs")
+    if stored_filepath:
+        fname = Path(stored_filepath).name
+        c1 = os.path.join(docs_dir, fname)
+        if os.path.exists(c1):
+            return c1
+    c2 = os.path.join(docs_dir, f"{doc_id}_{doc_filename}")
+    if os.path.exists(c2):
+        return c2
+    if stored_filepath:
+        c3 = os.path.join(upload_dir, Path(stored_filepath).name)
+        if os.path.exists(c3):
+            return c3
+    return None
+
+
 def resolve_sqlite_path(db_url: str) -> Optional[str]:
     """Extract file path from a sqlite:/// URL."""
     if not db_url or not db_url.startswith("sqlite"):
@@ -258,12 +283,13 @@ def run_prune_users(
         for doc in private_docs:
             vec_count = get_doc_vector_count(chroma_collection, doc.id)
             total_private_vectors += vec_count
-            file_exists = bool(doc.filepath and os.path.exists(doc.filepath))
+            resolved_path = resolve_document_filepath(doc.id, doc.filename, doc.filepath, actual_upload_dir)
+            file_exists = resolved_path is not None
             private_docs_info.append(
                 {
                     "id": doc.id,
                     "filename": doc.filename,
-                    "filepath": doc.filepath,
+                    "filepath": resolved_path or doc.filepath,
                     "file_exists": file_exists,
                     "vectors": vec_count,
                     "owner_id": doc.owner_id,
@@ -457,11 +483,18 @@ def run_prune_users(
                         delete_doc_vectors(chroma_collection, p_doc.id)
 
                     # Source file on disk
+                    paths_to_delete = set()
                     if p_doc.filepath and os.path.exists(p_doc.filepath):
+                        paths_to_delete.add(p_doc.filepath)
+                    resolved_p = resolve_document_filepath(p_doc.id, p_doc.filename, p_doc.filepath, actual_upload_dir)
+                    if resolved_p and os.path.exists(resolved_p):
+                        paths_to_delete.add(resolved_p)
+
+                    for p in paths_to_delete:
                         try:
-                            os.remove(p_doc.filepath)
+                            os.remove(p)
                         except OSError as e:
-                            logger.warning(f"Could not remove doc file {p_doc.filepath}: {e}")
+                            logger.warning(f"Could not remove doc file {p}: {e}")
 
                     # Extracted images and rendered pages matching doc.id
                     for folder in [images_dir, rendered_pages_dir]:
