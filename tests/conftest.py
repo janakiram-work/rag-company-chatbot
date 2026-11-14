@@ -22,6 +22,7 @@ os.environ["ADMIN_EMAIL"] = "admin@abctechnologies.com"
 os.environ["ADMIN_PASSWORD"] = "AdminTestSecurePass!2026"
 
 import backend.config as cfg
+cfg.DATABASE_URL = f"sqlite:///{_test_db_path}"
 cfg.APP_ENV = "test"
 cfg.SEED_DEMO_USERS = True
 cfg.DEMO_ADMIN_EMAIL = "admin@abctechnologies.com"
@@ -30,6 +31,13 @@ cfg.DEMO_USER_EMAIL = "user@abctechnologies.com"
 cfg.DEMO_USER_PASSWORD = "UserTestSecurePass!2026"
 cfg.ADMIN_EMAIL = "admin@abctechnologies.com"
 cfg.ADMIN_PASSWORD = "AdminTestSecurePass!2026"
+
+import backend.database as db_mod
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+db_mod.DATABASE_URL = f"sqlite:///{_test_db_path}"
+db_mod.engine = create_engine(f"sqlite:///{_test_db_path}", connect_args={"check_same_thread": False})
+db_mod.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_mod.engine)
 
 import backend.rag.vector_store as vs
 

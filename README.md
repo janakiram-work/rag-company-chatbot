@@ -99,6 +99,48 @@ The database seeds an administrator account on initial startup only when `ADMIN_
 
 ---
 
+## 🎨 Enterprise Branding & Product Customization
+
+1. **Dynamic White-Labeling**:
+   - Admins can configure the application's **Company Name**, **Tagline**, **Primary Accent Color**, and upload a custom **Company Logo** directly via the Admin Console (`/admin` -> Company Branding tab) or via API (`PUT /api/admin/settings/branding`).
+   - Changes take effect dynamically across all user sessions without requiring a backend restart.
+   - The public configuration endpoint `GET /api/config` serves branding attributes preloaded at page load.
+
+2. **Account Menu & User Settings**:
+   - ChatGPT/Claude-style user avatar dropdown at the bottom of the sidebar.
+   - Comprehensive Settings modal with tabs:
+     - **Profile**: Update display name, customize avatar accent color, and view role/email.
+     - **Appearance**: Select Theme (Light, Dark, or System) and toggle reduced motion.
+     - **Security**: Self-service password change requiring current password and enforcing strength policies.
+
+3. **Dual-Identifier Login & Username Support**:
+   - Users can authenticate with either their **Email** or **Username** interchangeably.
+   - Registration enforces unique lowercase usernames (min 3 characters, alphanumeric plus dots/underscores).
+   - All legacy database accounts are automatically backfilled with unique usernames on migration.
+
+4. **Self-Service & Admin-Approved Password Resets**:
+   - **Forgot Password**: Users submit their email or username to initiate a password reset. Returns a generic non-enumerating confirmation response.
+   - **SMTP Mode**: When `SMTP_HOST` is configured, an email with a secure single-use reset link (`/?token=...`) is dispatched immediately.
+   - **Admin Approval Mode**: If SMTP is unconfigured, password reset requests route to the **Admin Password Resets Inbox** (`/admin` -> Password Resets tab). Admins review pending requests and generate a single-use reset URL to share securely with the employee.
+   - Single-use tokens expire after 30 minutes, increment the user's `token_version`, and invalidate any existing active user sessions upon completion.
+
+5. **Inquiries & In-App Notification Bell**:
+   - Users can submit support inquiries, bug reports, and document access requests directly from the chat UI (`POST /api/support/requests`).
+   - Admins review and reply to inquiries in real time from the Admin Console.
+   - Users receive live badge counts and toasts via the header **Notification Bell** with one-click actions.
+
+6. **CLI Password Management (`scripts/set_password.py`)**:
+   - For server administrators needing out-of-band password management:
+     ```bash
+     python scripts/set_password.py <username_or_email>
+     ```
+   - Uses `getpass` hidden terminal input asked twice.
+   - Enforces a minimum of 12 characters and rejects known weak defaults.
+   - Never logs or prints passwords to standard output.
+   - Invalidates all existing active user sessions by incrementing the account's token version.
+
+---
+
 ## 🔒 Security Hardening
 
 - **Cookie-Based Authentication**: JWT access token (30 min) and refresh token (7 days) stored in `httpOnly`, `SameSite=Lax` cookies with `credentials: 'include'` support, plus backward-compatible `Bearer` header support.
@@ -220,6 +262,12 @@ Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRE
 | `WARMUP_OCR` | `false` | Preload EasyOCR model on startup thread. Default `false` keeps startup fast and memory footprint low. |
 | `MAX_HEAVY_TASKS` | `2` | Bounded semaphore limiting concurrent heavy workloads (embedding, OCR, SIFT) to protect small RAM instances. |
 | `MAX_CONCURRENT_CHATS` | `6` | Maximum concurrent streaming chat sessions. Exceeding requests get HTTP 503 with Retry-After. |
+| `SMTP_HOST` | `""` | Optional SMTP server hostname for outbound password reset emails. |
+| `SMTP_PORT` | `587` | SMTP port (e.g. 587 for STARTTLS or 465 for SSL). |
+| `SMTP_USER` | `""` | SMTP username / sender account. |
+| `SMTP_PASSWORD` | `""` | SMTP password / app password. |
+| `SMTP_FROM` | `""` | Outbound email sender address. |
+| `SMTP_TLS` | `true` | Enable TLS encryption for SMTP delivery. |
 
 ### 5. Starting the Server
 

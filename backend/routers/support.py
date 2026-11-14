@@ -54,7 +54,16 @@ def create_support_request(
         )
 
     log_audit(db, current_user.id, "support_request_created", target=req.id, details=req.subject)
-    return req
+    return {
+        "id": req.id,
+        "type": req.type,
+        "subject": req.subject,
+        "message": req.message,
+        "status": req.status,
+        "related_conversation_id": req.related_conversation_id,
+        "created_at": req.created_at.isoformat() if req.created_at else None,
+        "updated_at": req.updated_at.isoformat() if req.updated_at else None,
+    }
 
 
 @router.get("/requests")
@@ -68,7 +77,19 @@ def list_my_support_requests(
         .order_by(SupportRequest.updated_at.desc())
         .all()
     )
-    return reqs
+    return [
+        {
+            "id": r.id,
+            "type": r.type,
+            "subject": r.subject,
+            "message": r.message,
+            "status": r.status,
+            "related_conversation_id": r.related_conversation_id,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in reqs
+    ]
 
 
 @router.get("/requests/{req_id}")

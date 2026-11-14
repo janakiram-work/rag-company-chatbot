@@ -321,8 +321,18 @@ async def reset_password(
         PasswordReset.status.in_(["pending", "approved"]),
     ).first()
 
-    if not pr or pr.expires_at < utcnow():
-        if pr and pr.expires_at < utcnow():
+    now = utcnow()
+    is_expired = False
+    if pr and pr.expires_at:
+        exp = pr.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        is_expired = (exp < now)
+
+    if not pr or is_expired:
+        if pr and is_expired:
             pr.status = "expired"
             db.commit()
         raise HTTPException(

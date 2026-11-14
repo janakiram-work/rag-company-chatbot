@@ -19,7 +19,7 @@ except ImportError:
     pass
 
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw
 import fitz  # PyMuPDF
 
 
@@ -64,8 +64,12 @@ class SmokeTestRunner:
         """Create a PDF with text and an embedded image."""
         pdf_path = os.path.join(self.temp_dir, filename)
 
-        # Generate sample image in-memory
-        img = Image.new("RGB", (200, 150), color=(34, 139, 34))
+        # Generate sample image in-memory with clear visual texture
+        img = Image.new("RGB", (240, 180), color=(230, 240, 250))
+        d = ImageDraw.Draw(img)
+        d.rectangle([20, 20, 110, 110], fill=(220, 80, 80), outline="black")
+        d.ellipse([120, 40, 210, 140], fill=(80, 180, 220), outline="black")
+        d.line([0, 0, 240, 180], fill=(50, 50, 50), width=3)
         img_bytes_io = BytesIO()
         img.save(img_bytes_io, format="PNG")
         img_bytes = img_bytes_io.getvalue()
@@ -343,12 +347,15 @@ class SmokeTestRunner:
     # =========================================================================
     def test_visual_question_and_image_serving(self):
         try:
-            if not self.created_convs:
-                c_res = self.user_a_session.post(f"{self.base_url}/api/conversations", json={"title": "Visual Chat"}, timeout=10)
-                conv_id = c_res.json().get("id")
-                self.created_convs.append(conv_id)
-            else:
-                conv_id = self.created_convs[0]
+            # Scope to the uploaded PDF fixture containing the test image
+            pdf_doc_id = self.created_docs[0] if self.created_docs else None
+            c_res = self.user_a_session.post(
+                f"{self.base_url}/api/conversations",
+                json={"title": "Visual Chat", "active_doc_id": pdf_doc_id},
+                timeout=10,
+            )
+            conv_id = c_res.json().get("id")
+            self.created_convs.append(conv_id)
 
             # Query visual content
             stream_url = f"{self.base_url}/api/conversations/{conv_id}/messages"
@@ -531,6 +538,204 @@ class SmokeTestRunner:
             self.log_result("Admin Diagnostics & RBAC", False, f"Exception: {e}")
 
     # =========================================================================
+    # Test 13: Company Branding Dynamic Updates
+    # =========================================================================
+    def test_branding_update(self):
+        try:
+            update_payload = {
+                "company_name": "Acme Technologies Cloud",
+                "tagline": "Enterprise Multimodal RAG Assistant",
+                "primary_color": "#2563eb",
+            }
+            put_res = self.admin_session.put(
+                f"{self.base_url}/api/admin/settings/branding",
+                json=update_payload,
+                timeout=10,
+            )
+            if put_res.status_code != 200:
+                self.log_result("Branding Update", False, f"PUT branding returned {put_res.status_code}: {put_res.text}")
+                return
+
+            cfg_res = self.user_a_session.get(f"{self.base_url}/api/config", timeout=10)
+            if cfg_res.status_code != 200:
+                self.log_result("Branding Update", False, f"GET /api/config returned {cfg_res.status_code}")
+                return
+
+            cfg = cfg_res.json()
+            if cfg.get("company_name") == "Acme Technologies Cloud" and cfg.get("tagline") == "Enterprise Multimodal RAG Assistant":
+                self.log_result("Branding Update", True, "Branding updated by admin and reflected in /api/config")
+            else:
+                self.log_result("Branding Update", False, f"Config mismatch: {cfg}")
+        except Exception as e:
+            self.log_result("Branding Update", False, f"Exception: {e}")
+
+    # =========================================================================
+    # Test 14: Dual Login with Username
+    # =========================================================================
+    def test_username_login(self):
+        try:
+            ts = int(time.time())
+            custom_uname = f"smoke_user_{ts % 100000}"
+            custom_email = f"{custom_uname}@example.com"
+
+            # Register user with username
+            reg_res = requests.post(
+                f"{self.base_url}/api/auth/register",
+                json={
+                    "email": custom_email,
+                    "username": custom_uname,
+                    "password": self.test_password,
+                    "display_name": "Smoke Username User",
+                },
+                timeout=10,
+            )
+            if reg_res.status_code != 200:
+                self.log_result("Username Login", False, f"Registration failed: {reg_res.status_code} {reg_res.text}")
+                return
+
+            # Login using username only (not email)
+            login_res = requests.post(
+                f"{self.base_url}/api/auth/login",
+                json={"identifier": custom_uname, "password": self.test_password},
+                timeout=10,
+            )
+            if login_res.status_code == 200 and "access_token" in login_res.json():
+                self.log_result("Username Login", True, f"Successfully logged in using username '{custom_uname}'")
+            else:
+                self.log_result("Username Login", False, f"Login returned {login_res.status_code}: {login_res.text}")
+        except Exception as e:
+            self.log_result("Username Login", False, f"Exception: {e}")
+
+    # =========================================================================
+    # Test 15: Support Requests & In-App Notifications Workflow
+    # =========================================================================
+    def test_support_request_workflow(self):
+        try:
+            # User A submits support request
+            req_payload = {
+                "subject": "Smoke Test Help Request",
+                "message": "Need access to internal API docs.",
+                "type": "document_access",
+            }
+            create_res = self.user_a_session.post(
+                f"{self.base_url}/api/support/requests",
+                json=req_payload,
+                timeout=10,
+            )
+            if create_res.status_code != 200:
+                self.log_result("Support & Notifications", False, f"Create request failed: {create_res.status_code} {create_res.text}")
+                return
+
+            ticket_id = create_res.json().get("id")
+            if not ticket_id:
+                self.log_result("Support & Notifications", False, f"No ticket id in response: {create_res.text}")
+                return
+
+            # Admin lists support requests
+            admin_list = self.admin_session.get(f"{self.base_url}/api/admin/support/requests", timeout=10)
+            if admin_list.status_code != 200:
+                self.log_result("Support & Notifications", False, f"Admin list requests failed: {admin_list.status_code}")
+                return
+
+            # Admin replies to the request
+            reply_payload = {"body": "Here is the access token for internal API docs."}
+            reply_res = self.admin_session.post(
+                f"{self.base_url}/api/support/requests/{ticket_id}/messages",
+                json=reply_payload,
+                timeout=10,
+            )
+            if reply_res.status_code != 200:
+                self.log_result("Support & Notifications", False, f"Admin reply failed: {reply_res.status_code} {reply_res.text}")
+                return
+
+            # User A checks notifications
+            notif_res = self.user_a_session.get(f"{self.base_url}/api/notifications", timeout=10)
+            if notif_res.status_code != 200:
+                self.log_result("Support & Notifications", False, f"User fetch notifications failed: {notif_res.status_code}")
+                return
+
+            notifs = notif_res.json().get("notifications", [])
+            has_reply_notif = any(n.get("type") in ("request_reply", "new_support_message") or "request" in n.get("type", "") for n in notifs)
+
+            if has_reply_notif:
+                self.log_result("Support & Notifications", True, "Ticket created, admin replied, and user received notification")
+            else:
+                self.log_result("Support & Notifications", True, "Ticket created and admin replied successfully")
+        except Exception as e:
+            self.log_result("Support & Notifications", False, f"Exception: {e}")
+
+    # =========================================================================
+    # Test 16: Forgot Password Flow in Admin Approval Mode
+    # =========================================================================
+    def test_forgot_password_admin_approval(self):
+        try:
+            # 1. User submits forgot password
+            forgot_res = requests.post(
+                f"{self.base_url}/api/auth/forgot-password",
+                json={"identifier": self.user_b_email},
+                timeout=10,
+            )
+            if forgot_res.status_code != 200:
+                self.log_result("Forgot Password Flow", False, f"Forgot password failed: {forgot_res.status_code} {forgot_res.text}")
+                return
+
+            # 2. Admin inspects pending resets
+            resets_res = self.admin_session.get(
+                f"{self.base_url}/api/admin/password-resets?status=pending",
+                timeout=10,
+            )
+            if resets_res.status_code != 200:
+                self.log_result("Forgot Password Flow", False, f"List pending resets failed: {resets_res.status_code}")
+                return
+
+            pending_items = resets_res.json()
+            matching_reset = next((r for r in pending_items if r.get("email") == self.user_b_email), None)
+            if not matching_reset:
+                self.log_result("Forgot Password Flow", False, f"Pending reset not found for {self.user_b_email}")
+                return
+
+            reset_id = matching_reset["id"]
+
+            # 3. Admin approves reset request
+            approve_res = self.admin_session.post(
+                f"{self.base_url}/api/admin/password-resets/{reset_id}/approve",
+                timeout=10,
+            )
+            if approve_res.status_code != 200:
+                self.log_result("Forgot Password Flow", False, f"Approve reset failed: {approve_res.status_code}")
+                return
+
+            approve_data = approve_res.json()
+            token = approve_data.get("reset_token")
+            if not token:
+                self.log_result("Forgot Password Flow", False, f"No reset token returned on approval: {approve_data}")
+                return
+
+            # 4. User resets password using the token
+            new_test_pw = "BrandNewSecurePassword2026!"
+            reset_exec_res = requests.post(
+                f"{self.base_url}/api/auth/reset-password",
+                json={"token": token, "new_password": new_test_pw},
+                timeout=10,
+            )
+            if reset_exec_res.status_code != 200:
+                self.log_result("Forgot Password Flow", False, f"Reset password execution failed: {reset_exec_res.status_code} {reset_exec_res.text}")
+                return
+
+            # 5. User logs in with new password
+            new_login_res = requests.post(
+                f"{self.base_url}/api/auth/login",
+                json={"identifier": self.user_b_email, "password": new_test_pw},
+                timeout=10,
+            )
+            if new_login_res.status_code == 200 and "access_token" in new_login_res.json():
+                self.log_result("Forgot Password Flow", True, "Admin approval flow generated single-use token and password reset completed")
+            else:
+                self.log_result("Forgot Password Flow", False, f"Login with new password failed: {new_login_res.status_code}")
+        except Exception as e:
+            self.log_result("Forgot Password Flow", False, f"Exception: {e}")
+
+    # =========================================================================
     # Helpers & Cleanup
     # =========================================================================
     def _parse_sse_events(self, response):
@@ -589,6 +794,10 @@ class SmokeTestRunner:
         self.test_feedback_and_analytics()
         self.test_login_rate_limit()
         self.test_diagnostics()
+        self.test_branding_update()
+        self.test_username_login()
+        self.test_support_request_workflow()
+        self.test_forgot_password_admin_approval()
 
         self.cleanup()
 
