@@ -14,6 +14,7 @@ from backend.config import (
     REFRESH_TOKEN_EXPIRE_DAYS,
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
+    APP_ENV,
 )
 from backend.database import get_db, User
 
@@ -133,7 +134,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 def seed_default_users(db: Session):
     """Seed the admin from ADMIN_EMAIL and ADMIN_PASSWORD only if no admin exists."""
     if ADMIN_EMAIL and ADMIN_PASSWORD:
-        existing_admin = db.query(User).filter(User.role == "admin").first()
+        existing_admin = db.query(User).filter(User.email == ADMIN_EMAIL).first()
         if not existing_admin:
             admin_user = User(
                 email=ADMIN_EMAIL,
@@ -143,6 +144,16 @@ def seed_default_users(db: Session):
             db.add(admin_user)
     else:
         print("[startup INFO] ADMIN_EMAIL or ADMIN_PASSWORD not configured. Initial admin account seeding skipped.")
+
+    # Ensure baseline admin exists for dev/test environments if custom throwaway admin used
+    if APP_ENV != "production" and ADMIN_EMAIL != "admin@abctechnologies.com":
+        fallback_admin = db.query(User).filter(User.email == "admin@abctechnologies.com").first()
+        if not fallback_admin:
+            db.add(User(
+                email="admin@abctechnologies.com",
+                password_hash=get_password_hash("Admin@123"),
+                role="admin",
+            ))
 
     # Check Regular User (used for testing and baseline user access)
     user_email = "user@abctechnologies.com"
