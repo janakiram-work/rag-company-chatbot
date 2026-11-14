@@ -85,6 +85,10 @@ def simulate_user(user_idx: int, base_url: str, questions: list):
         elif reg_res.status_code not in (200, 201):
             results["errors"].append(f"Register failed: {reg_res.status_code}")
             return results
+
+        token = reg_res.json().get("access_token")
+        if token:
+            session.headers["Authorization"] = f"Bearer {token}"
     except Exception as e:
         results["errors"].append(f"Register exception: {e}")
         return results
@@ -146,6 +150,10 @@ def simulate_admin(base_url: str):
         if login_res.status_code != 200:
             admin_results["failed"] += 1
             return admin_results
+
+        token = login_res.json().get("access_token")
+        if token:
+            session.headers["Authorization"] = f"Bearer {token}"
 
         endpoints = [
             "/api/admin/stats",
