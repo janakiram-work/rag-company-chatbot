@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import AdminDashboard from './components/AdminDashboard';
 import FloatingAdminChat from './components/FloatingAdminChat';
+import SettingsModal from './components/SettingsModal';
+import ContactAdminModal from './components/ContactAdminModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   getAuthToken,
@@ -24,6 +26,23 @@ export default function App() {
   const [currentView, setCurrentView] = useState('chat'); // 'chat' | 'admin'
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Branding State (cached in localStorage to avoid flicker)
+  const [branding, setBranding] = useState(() => {
+    try {
+      const cached = localStorage.getItem('app_branding');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Modals state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState('profile');
+  const [isContactAdminOpen, setIsContactAdminOpen] = useState(false);
+  const [contactAdminQuestion, setContactAdminQuestion] = useState('');
+  const [contactAdminConvId, setContactAdminConvId] = useState(null);
+
   // Dark Mode State
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return (
@@ -34,6 +53,29 @@ export default function App() {
         window.matchMedia('(prefers-color-scheme: dark)').matches)
     );
   });
+
+  // Apply document title on mount from cache
+  useEffect(() => {
+    if (branding?.company_name) {
+      document.title = `${branding.company_name} Assistant`;
+    }
+  }, []);
+
+  // Fetch /api/config for live branding before render
+  useEffect(() => {
+    fetch('/api/config')
+      .then((res) => res.json())
+      .then((cfg) => {
+        if (cfg && cfg.branding) {
+          setBranding(cfg.branding);
+          localStorage.setItem('app_branding', JSON.stringify(cfg.branding));
+          if (cfg.branding.company_name) {
+            document.title = `${cfg.branding.company_name} Assistant`;
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Conversations State
   const [conversations, setConversations] = useState([]);
@@ -94,7 +136,6 @@ export default function App() {
       if (convs.length > 0 && !activeConversationId) {
         selectConversation(convs[0].id);
       } else if (convs.length === 0) {
-        // Do not create empty row in DB until first message is sent (Rule 13)
         setActiveConversationId(null);
         setActiveConversation({
           id: null,
@@ -128,8 +169,6 @@ export default function App() {
     }
   };
 
-  // Rule 4: One click must immediately set activeConversation to null, clear
-  // messages, filter chip and input, reset scroll to top, and show empty welcome state without waiting for any API call.
   const handleNewChat = () => {
     setActiveConversationId(null);
     setActiveConversation(null);
@@ -168,7 +207,6 @@ export default function App() {
     }
   };
 
-  // Immediately update sidebar title and active conv on SSE done event (Rule 13 & 14)
   const handleConversationDone = (doneData) => {
     if (!doneData || !doneData.conversation_id) return;
 
@@ -227,6 +265,32 @@ export default function App() {
     setActiveConversationId(null);
   };
 
+  const handleOpenSettings = (tab = 'profile') => {
+    setSettingsInitialTab(tab);
+    setIsSettingsOpen(true);
+  };
+
+  const handleOpenContactAdmin = (initialQuestion = '', convId = null) => {
+    setContactAdminQuestion(initialQuestion);
+    setContactAdminConvId(convId);
+    setIsContactAdminOpen(true);
+  };
+
+  const handleBrandingUpdated = (newBranding) => {
+    setBranding(newBranding);
+    localStorage.setItem('app_branding', JSON.stringify(newBranding));
+    if (newBranding?.company_name) {
+      document.title = `${newBranding.company_name} Assistant`;
+    }
+  };
+
+  const handleAllConversationsDeleted = () => {
+    setConversations([]);
+    setActiveConversation(null);
+    setActiveConversationId(null);
+    setIsSettingsOpen(false);
+  };
+
   if (!isAuthenticated) {
     return (
       <LoginPage
@@ -258,6 +322,9 @@ export default function App() {
           onLogout={handleLogout}
           isMobileOpen={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          branding={branding}
+          onOpenSettings={handleOpenSettings}
+          onOpenContactAdmin={handleOpenContactAdmin}
         />
 
         {/* Main Content Area */}
@@ -272,6 +339,8 @@ export default function App() {
                 onConversationCreated={handleConversationCreated}
                 currentUser={currentUser}
                 onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+                branding={branding}
+                onOpenContactAdmin={handleOpenContactAdmin}
               />
             </ErrorBoundary>
           </div>
@@ -284,6 +353,28 @@ export default function App() {
             </div>
           )}
         </main>
+
+        {/* Settings Modal */}
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          currentUser={currentUser}
+          onUserUpdated={(updated) => setCurrentUser(updated)}
+          branding={branding}
+          onBrandingUpdated={handleBrandingUpdated}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
+          onAllConversationsDeleted={handleAllConversationsDeleted}
+          initialTab={settingsInitialTab}
+        />
+
+        {/* Contact Admin Modal */}
+        <ContactAdminModal
+          isOpen={isContactAdminOpen}
+          onClose={() => setIsContactAdminOpen(false)}
+          initialQuestion={contactAdminQuestion}
+          conversationId={contactAdminConvId}
+        />
       </div>
     </ErrorBoundary>
   );

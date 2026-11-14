@@ -203,17 +203,61 @@ async function request(url, options = {}, isRetry = false) {
   return res.text();
 }
 
+// Config & Branding
+export const apiGetConfig = () => request('/config');
+export const apiUpdateBranding = (data) =>
+  request('/admin/settings/branding', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+export const apiUploadLogo = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request('/admin/settings/logo', {
+    method: 'POST',
+    body: formData,
+  });
+};
+
 // Authentication API
-export const apiLogin = (email, password) =>
+export const apiLogin = (identifier, password) =>
   request('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, email: identifier, password }),
   });
 
-export const apiRegister = (email, password) =>
-  request('/auth/register', {
+export const apiRegister = (usernameOrEmail, emailOrPassword, passwordMaybe, display_name = null) => {
+  // Support both (username, email, password, display_name) and legacy (email, password)
+  if (passwordMaybe !== undefined) {
+    return request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: usernameOrEmail,
+        email: emailOrPassword,
+        password: passwordMaybe,
+        display_name,
+      }),
+    });
+  }
+  return request('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email: usernameOrEmail,
+      password: emailOrPassword,
+    }),
+  });
+};
+
+export const apiForgotPassword = (identifier) =>
+  request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ identifier }),
+  });
+
+export const apiResetPassword = (token, new_password) =>
+  request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, new_password }),
   });
 
 export const apiLogout = () =>
@@ -222,6 +266,86 @@ export const apiLogout = () =>
   });
 
 export const apiGetMe = () => request('/auth/me');
+
+// Profile & Preferences API
+export const apiGetProfile = () => request('/me');
+export const apiUpdateProfile = (data) =>
+  request('/me', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+export const apiChangePassword = (current_password, new_password) =>
+  request('/me/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password, new_password }),
+  });
+export const apiGetPreferences = () => request('/me/preferences');
+export const apiUpdatePreferences = (theme) =>
+  request('/me/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ theme }),
+  });
+export const apiDeleteAllConversations = () =>
+  request('/me/conversations', { method: 'DELETE' });
+export const apiExportConversations = () => request('/me/export');
+
+// Support Requests API
+export const apiCreateSupportRequest = (data) =>
+  request('/support/requests', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+export const apiGetMySupportRequests = () => request('/support/requests');
+export const apiGetSupportRequest = (id) => request(`/support/requests/${id}`);
+export const apiReplySupportRequest = (id, body) =>
+  request(`/support/requests/${id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+export const apiUpdateSupportStatus = (id, status) =>
+  request(`/support/requests/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+export const apiGetAdminSupportRequests = (status = null) => {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request(`/admin/support/requests${query}`);
+};
+
+// Notifications API
+export const apiGetNotifications = () => request('/notifications');
+export const apiMarkNotificationRead = (id) =>
+  request(`/notifications/${id}/read`, { method: 'POST' });
+export const apiMarkAllNotificationsRead = () =>
+  request('/notifications/read-all', { method: 'POST' });
+
+// Admin Management API
+export const apiGetAdminUsersPaginated = (q = '', skip = 0, limit = 50) =>
+  request(`/admin/users?q=${encodeURIComponent(q)}&skip=${skip}&limit=${limit}`);
+export const apiCreateAdminUser = (data) =>
+  request('/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+export const apiUpdateAdminUser = (userId, data) =>
+  request(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+export const apiForcePasswordReset = (userId) =>
+  request(`/admin/users/${userId}/force-password-reset`, { method: 'POST' });
+export const apiDeactivateUser = (userId) =>
+  request(`/admin/users/${userId}`, { method: 'DELETE' });
+export const apiGetAuditLog = (limit = 100, action = null) => {
+  const query = action ? `?limit=${limit}&action=${encodeURIComponent(action)}` : `?limit=${limit}`;
+  return request(`/admin/audit${query}`);
+};
+export const apiGetPasswordResets = (status = 'pending') =>
+  request(`/admin/password-resets?status=${encodeURIComponent(status)}`);
+export const apiApprovePasswordReset = (id) =>
+  request(`/admin/password-resets/${id}/approve`, { method: 'POST' });
+export const apiRejectPasswordReset = (id) =>
+  request(`/admin/password-resets/${id}/reject`, { method: 'POST' });
 
 // Conversations API
 export const apiGetConversations = () => request('/conversations');

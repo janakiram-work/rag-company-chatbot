@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   MessageSquare,
@@ -11,6 +11,10 @@ import {
   ChevronRight,
   Filter,
   X,
+  Settings as SettingsIcon,
+  HelpCircle,
+  MoreVertical,
+  ChevronUp,
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -27,7 +31,13 @@ export default function Sidebar({
   onLogout,
   isMobileOpen = false,
   onCloseMobile = null,
+  branding = null,
+  onOpenSettings = null,
+  onOpenContactAdmin = null,
 }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isMobileOpen && onCloseMobile) {
@@ -37,6 +47,20 @@ export default function Sidebar({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobileOpen, onCloseMobile]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen]);
+
   // Group conversations by date
   const groupConversations = () => {
     const today = new Date();
@@ -117,6 +141,20 @@ export default function Sidebar({
     );
   };
 
+  const companyName = branding?.company_name || 'Enterprise Assistant';
+  const tagline = branding?.tagline || 'Enterprise Knowledge';
+  const logoUrl = branding?.logo_url;
+  const accentColor = branding?.accent_color || '#10b981';
+
+  const userInitials = (
+    currentUser?.display_name ||
+    currentUser?.username ||
+    currentUser?.email ||
+    'U'
+  )
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -135,13 +173,28 @@ export default function Sidebar({
         {/* Top Header & New Chat */}
         <div className="p-3 border-b border-gray-200/60 dark:border-zinc-800">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2.5 px-1 py-1">
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white leading-none">ABC Technologies</h2>
-                <span className="text-[10px] text-gray-400 dark:text-zinc-500">Enterprise Knowledge</span>
+            <div className="flex items-center gap-2.5 px-1 py-1 truncate">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="w-8 h-8 rounded-lg object-contain bg-white dark:bg-zinc-800 p-0.5 shadow-xs flex-shrink-0"
+                />
+              ) : (
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-xs flex-shrink-0"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                </div>
+              )}
+              <div className="truncate">
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white leading-none truncate">
+                  {companyName}
+                </h2>
+                <span className="text-[10px] text-gray-400 dark:text-zinc-500 truncate block mt-0.5">
+                  {tagline}
+                </span>
               </div>
             </div>
             {onCloseMobile && (
@@ -162,7 +215,7 @@ export default function Sidebar({
               onNewChat();
               if (onCloseMobile) onCloseMobile();
             }}
-            className="w-full py-2.5 px-3 min-h-[44px] bg-white dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700/60 text-gray-800 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm transition"
+            className="w-full py-2.5 px-3 min-h-[44px] bg-white dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700/60 text-gray-800 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs transition"
           >
             <span className="flex items-center gap-2">
               <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -172,84 +225,140 @@ export default function Sidebar({
           </button>
         </div>
 
-      {/* Conversations List */}
-      <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-        {conversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-            <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center mb-2.5 text-gray-400 dark:text-zinc-500">
-              <MessageSquare className="w-5 h-5" />
+        {/* Conversations List */}
+        <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+          {conversations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+              <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center mb-2.5 text-gray-400 dark:text-zinc-500">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <p className="text-xs font-semibold text-gray-600 dark:text-zinc-400">No conversations yet</p>
+              <p className="text-[11px] text-gray-400 dark:text-zinc-500 mt-1">Click "New Chat" above to start asking questions.</p>
             </div>
-            <p className="text-xs font-semibold text-gray-600 dark:text-zinc-400">No conversations yet</p>
-            <p className="text-[11px] text-gray-400 dark:text-zinc-500 mt-1">Click "New Chat" above to start asking questions.</p>
-          </div>
-        ) : (
-          <>
-            {renderGroup('Today', groups.today)}
-            {renderGroup('Previous 7 Days', groups.sevenDays)}
-            {renderGroup('Older', groups.older)}
-          </>
-        )}
-      </div>
-
-      {/* Bottom Controls & User Profile */}
-      <div className="p-3 border-t border-gray-200/60 dark:border-zinc-800 space-y-1">
-        {currentUser?.role === 'admin' && (
-          <button
-            type="button"
-            onClick={() => onSwitchView(currentView === 'admin' ? 'chat' : 'admin')}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
-              currentView === 'admin'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <Shield className="w-3.5 h-3.5 text-purple-400" />
-              {currentView === 'admin' ? 'Back to User Chat' : 'Admin Dashboard'}
-            </span>
-            <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-          </button>
-        )}
-
-        <div className="flex items-center justify-between px-3 py-1.5">
-          <span className="text-[11px] text-gray-400 dark:text-zinc-500">Theme</span>
-          <button
-            type="button"
-            onClick={onToggleDarkMode}
-            className="p-1.5 rounded-lg text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 transition"
-            title="Toggle Dark/Light Mode"
-          >
-            {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
+          ) : (
+            <>
+              {renderGroup('Today', groups.today)}
+              {renderGroup('Previous 7 Days', groups.sevenDays)}
+              {renderGroup('Older', groups.older)}
+            </>
+          )}
         </div>
 
-        {/* User Card */}
-        <div className="pt-2 border-t border-gray-200/40 dark:border-zinc-800/80 flex items-center justify-between">
-          <div className="truncate pr-2">
-            <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">
-              {currentUser?.email}
-            </p>
-            <span
-              className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase ${
-                currentUser?.role === 'admin'
-                  ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                  : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-              }`}
-            >
-              {currentUser?.role}
-            </span>
-          </div>
+        {/* Bottom User Card with Popover Menu (ChatGPT / Claude style) */}
+        <div className="p-2 border-t border-gray-200/60 dark:border-zinc-800 relative" ref={menuRef}>
+          {/* Popover Menu */}
+          {isMenuOpen && (
+            <div className="absolute bottom-full left-2 right-2 mb-2 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-800 p-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-gray-100 dark:border-zinc-800">
+                <p className="font-semibold text-gray-900 dark:text-white truncate">
+                  {currentUser?.display_name || currentUser?.username || 'User'}
+                </p>
+                <p className="text-[11px] text-gray-400 truncate">
+                  {currentUser?.email}
+                </p>
+              </div>
+
+              <div className="py-1 space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    if (onOpenSettings) onOpenSettings('profile');
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium transition"
+                >
+                  <SettingsIcon className="w-4 h-4 text-gray-400" />
+                  Settings
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    if (onOpenContactAdmin) onOpenContactAdmin();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium transition"
+                >
+                  <HelpCircle className="w-4 h-4 text-emerald-500" />
+                  Contact Admin / Requests
+                </button>
+
+                {currentUser?.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onSwitchView(currentView === 'admin' ? 'chat' : 'admin');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 font-medium transition"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Shield className="w-4 h-4 text-purple-500" />
+                      {currentView === 'admin' ? 'Back to User Chat' : 'Admin Panel'}
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleDarkMode();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium transition"
+                >
+                  <span className="flex items-center gap-2.5">
+                    {isDarkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-blue-500" />}
+                    Theme
+                  </span>
+                  <span className="text-[10px] text-gray-400 uppercase font-semibold">
+                    {isDarkMode ? 'Dark' : 'Light'}
+                  </span>
+                </button>
+              </div>
+
+              <div className="pt-1 border-t border-gray-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onLogout();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 font-medium transition"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Log Out
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* User Card Trigger */}
           <button
             type="button"
-            onClick={onLogout}
-            className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-500/10 transition"
-            title="Log Out"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-gray-200/60 dark:hover:bg-zinc-800/80 transition text-left focus:outline-none"
           >
-            <LogOut className="w-4 h-4" />
+            <div className="flex items-center gap-2.5 truncate">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-xs flex-shrink-0"
+                style={{ backgroundColor: currentUser?.avatar_color || '#10b981' }}
+              >
+                {userInitials}
+              </div>
+              <div className="truncate">
+                <p className="text-xs font-semibold text-gray-900 dark:text-white truncate leading-tight">
+                  {currentUser?.display_name || currentUser?.username || 'User'}
+                </p>
+                <p className="text-[10px] text-gray-400 truncate">
+                  {currentUser?.email}
+                </p>
+              </div>
+            </div>
+            <ChevronUp className={`w-4 h-4 text-gray-400 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
           </button>
         </div>
-      </div>
-    </aside>
+      </aside>
     </>
   );
 }

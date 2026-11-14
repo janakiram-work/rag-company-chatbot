@@ -18,7 +18,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Menu,
+  HelpCircle,
 } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 import {
   apiStreamChatMessage,
   apiUploadDocument,
@@ -39,6 +41,8 @@ export default function ChatArea({
   onConversationCreated,
   currentUser,
   onToggleMobileSidebar = null,
+  branding = null,
+  onOpenContactAdmin = null,
 }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -490,6 +494,10 @@ export default function ChatArea({
             </span>
           )}
         </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <NotificationBell onOpenSupport={onOpenContactAdmin} onToast={addToast} />
+        </div>
       </header>
 
       {/* Messages Feed */}
@@ -520,14 +528,21 @@ export default function ChatArea({
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-lg mx-auto">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-4 shadow-sm">
-              <Sparkles className="w-6 h-6" />
-            </div>
+            {branding?.logo_url ? (
+              <img src={branding.logo_url} alt="Logo" className="w-12 h-12 rounded-2xl object-contain bg-emerald-50 dark:bg-zinc-800 p-1 mb-4 shadow-xs" />
+            ) : (
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white mb-4 shadow-xs"
+                style={{ backgroundColor: branding?.accent_color || '#10b981' }}
+              >
+                <Sparkles className="w-6 h-6" />
+              </div>
+            )}
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-              How can I help you today?
+              {branding?.company_name ? `Welcome to ${branding.company_name}` : 'How can I help you today?'}
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-6">
-              I can answer questions about the company documents you have access to.
+              {branding?.tagline || 'I can answer questions about the company documents you have access to.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-xs">
               {[
@@ -717,6 +732,23 @@ export default function ChatArea({
                       >
                         <ImageIcon className="w-3.5 h-3.5" />
                         Show more
+                      </button>
+                    </div>
+                  )}
+
+                  {/* "Ask admin" button under exact fallback response */}
+                  {msg.sender === 'assistant' && msg.content && msg.content.includes("I couldn't find that in the documents.") && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const prevUserMsg = messages.slice(0, idx).reverse().find((m) => m.sender === 'user')?.content || '';
+                          if (onOpenContactAdmin) onOpenContactAdmin(prevUserMsg, conversation?.id);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition shadow-xs"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        Ask admin
                       </button>
                     </div>
                   )}
