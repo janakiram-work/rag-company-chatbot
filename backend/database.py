@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     Text,
     DateTime,
+    Boolean,
     ForeignKey,
     event,
     text,
@@ -44,12 +45,21 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
+    username = Column(String(50), unique=True, index=True, nullable=True)
+    display_name = Column(String(100), nullable=True)
+    avatar_color = Column(String(20), default="#10b981", nullable=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), default="user", nullable=False)  # 'admin' or 'user'
+    is_active = Column(Boolean, default=True, nullable=False)
+    must_change_password = Column(Boolean, default=False, nullable=False)
+    token_version = Column(Integer, default=0, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
+    preference = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 
 class Conversation(Base):
@@ -157,6 +167,98 @@ class ImageAsset(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    theme = Column(String(20), default="system", nullable=False)  # 'light', 'dark', 'system'
+
+    user = relationship("User", back_populates="preference")
+
+
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, index=True)
+    status = Column(String(20), default="pending", nullable=False)  # 'pending', 'approved', 'used', 'expired', 'rejected'
+    created_at = Column(DateTime, default=utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    approver = relationship("User", foreign_keys=[approved_by])
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(30), nullable=False)  # 'question', 'document_access', 'issue', 'feature'
+    subject = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    status = Column(String(20), default="open", nullable=False)  # 'open', 'in_progress', 'resolved', 'closed'
+    related_conversation_id = Column(String(36), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+    messages = relationship("SupportMessage", back_populates="request", cascade="all, delete-orphan", order_by="SupportMessage.created_at")
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    request_id = Column(String(36), ForeignKey("support_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sender_role = Column(String(20), nullable=False)  # 'admin' or 'user'
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+    request = relationship("SupportRequest", back_populates="messages")
+    sender = relationship("User")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(50), nullable=False)  # 'request_created', 'request_reply', 'status_changed', 'password_reset_pending'
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    link = Column(String(255), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+    user = relationship("User", back_populates="notifications")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(100), nullable=False)
+    target = Column(String(255), nullable=True)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    actor = relationship("User")
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -165,10 +267,193 @@ def get_db():
         db.close()
 
 
+def backfill_users(db: Session):
+    """Backfill username, display_name, avatar_color, is_active, etc. for existing users."""
+    import re
+    AVATAR_PALETTE = ["#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#06b6d4", "#6366f1"]
+    users = db.query(User).all()
+    existing_usernames = {u.username.lower() for u in users if u.username}
+
+    for u in users:
+        if not u.username:
+            local_part = u.email.split("@")[0].lower()
+            clean_base = re.sub(r"[^a-z0-9_.]", "", local_part)
+            if len(clean_base) < 3:
+                clean_base = f"user_{clean_base}" if clean_base else f"user_{u.id}"
+            candidate = clean_base[:30]
+            suffix = 1
+            while candidate in existing_usernames:
+                candidate = f"{clean_base[:25]}_{suffix}"
+                suffix += 1
+            u.username = candidate
+            existing_usernames.add(candidate)
+
+        if not u.display_name:
+            local = u.email.split("@")[0].replace(".", " ").replace("_", " ")
+            u.display_name = local.title() if local else u.username
+
+        if not u.avatar_color:
+            u.avatar_color = AVATAR_PALETTE[u.id % len(AVATAR_PALETTE)]
+
+        if u.is_active is None:
+            u.is_active = True
+
+        if u.must_change_password is None:
+            u.must_change_password = False
+
+        if u.token_version is None:
+            u.token_version = 0
+
+        if not u.created_at:
+            u.created_at = utcnow()
+
+    db.commit()
+
+
+def get_setting(db: Session, key: str, default: str = None) -> str:
+    """Retrieve app setting by key."""
+    try:
+        s = db.query(AppSetting).filter(AppSetting.key == key).first()
+        return s.value if s and s.value is not None else default
+    except Exception:
+        return default
+
+
+def set_setting(db: Session, key: str, value: str, updated_by: int = None):
+    """Set or update app setting."""
+    try:
+        s = db.query(AppSetting).filter(AppSetting.key == key).first()
+        if not s:
+            s = AppSetting(key=key, value=value, updated_by=updated_by)
+            db.add(s)
+        else:
+            s.value = value
+            s.updated_by = updated_by
+            s.updated_at = utcnow()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Error setting {key}: {e}")
+
+
+def get_branding(db: Session = None) -> dict:
+    """Return branding configuration dynamically."""
+    import os
+    from backend.config import COMPANY_NAME, BRANDING_DIR
+
+    company_name = COMPANY_NAME or "Company Assistant"
+    tagline = "Enterprise RAG Intelligence & Multimodal Assistant"
+    accent_color = "#10b981"
+    logo_url = None
+
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+
+    try:
+        c_val = get_setting(db, "company_name")
+        if c_val:
+            company_name = c_val
+        t_val = get_setting(db, "tagline")
+        if t_val:
+            tagline = t_val
+        a_val = get_setting(db, "accent_color")
+        if a_val:
+            accent_color = a_val
+        logo_val = get_setting(db, "logo")
+        if logo_val:
+            logo_path = os.path.join(BRANDING_DIR, logo_val)
+            if os.path.exists(logo_path):
+                logo_url = f"/api/branding/logo?v={int(os.path.getmtime(logo_path))}"
+    except Exception:
+        pass
+    finally:
+        if close_db:
+            db.close()
+
+    return {
+        "company_name": company_name,
+        "tagline": tagline,
+        "accent_color": accent_color,
+        "logo_url": logo_url,
+    }
+
+
+def log_audit(db: Session, actor_id: int, action: str, target: str = None, details: str = None):
+    """Write an immutable audit log entry."""
+    try:
+        entry = AuditLog(
+            actor_id=actor_id,
+            action=action,
+            target=target,
+            details=details,
+            created_at=utcnow(),
+        )
+        db.add(entry)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Failed to write audit log: {e}")
+
+
+def create_notification(db: Session, user_id: int, type: str, title: str, body: str, link: str = None):
+    """Create in-app notification for a user."""
+    try:
+        notif = Notification(
+            user_id=user_id,
+            type=type,
+            title=title,
+            body=body,
+            link=link,
+            is_read=False,
+            created_at=utcnow(),
+        )
+        db.add(notif)
+        db.commit()
+        return notif
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Failed to create notification: {e}")
+        return None
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     if DATABASE_URL.startswith("sqlite"):
         with engine.connect() as conn:
+            existing_user_cols = set()
+            try:
+                res = conn.execute(text("PRAGMA table_info(users)")).fetchall()
+                existing_user_cols = {row[1] for row in res}
+            except Exception:
+                pass
+
+            user_alter_stmts = [
+                ("username", "ALTER TABLE users ADD COLUMN username VARCHAR(50)"),
+                ("display_name", "ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"),
+                ("avatar_color", "ALTER TABLE users ADD COLUMN avatar_color VARCHAR(20) DEFAULT '#10b981'"),
+                ("is_active", "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"),
+                ("must_change_password", "ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0"),
+                ("token_version", "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"),
+                ("last_login_at", "ALTER TABLE users ADD COLUMN last_login_at DATETIME"),
+                ("created_at", "ALTER TABLE users ADD COLUMN created_at DATETIME"),
+            ]
+            for col_name, stmt in user_alter_stmts:
+                if col_name not in existing_user_cols:
+                    try:
+                        conn.execute(text(stmt))
+                        conn.commit()
+                    except Exception as e:
+                        logger.debug(f"User column {col_name} migration note: {e}")
+
+            # Case-insensitive unique index on lower(username)
+            try:
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username_lower ON users (lower(username))"))
+                conn.commit()
+            except Exception:
+                pass
+
             for col_stmt in [
                 "ALTER TABLE messages ADD COLUMN latency_ms FLOAT",
                 "ALTER TABLE messages ADD COLUMN meta TEXT",
@@ -181,9 +466,10 @@ def init_db():
                 except Exception:
                     pass
 
-    # Migrate existing conversations that have an active_doc_id into conversation_documents
+    # Backfill users and migrate existing conversations
     try:
         with SessionLocal() as db:
+            backfill_users(db)
             convs = db.query(Conversation).filter(Conversation.active_doc_id.isnot(None)).all()
             for c in convs:
                 if c.active_doc_id:
@@ -202,7 +488,7 @@ def init_db():
             db.commit()
             normalize_database_records(db)
     except Exception as e:
-        logger.warning(f"Failed to migrate conversation active_doc_id: {e}")
+        logger.warning(f"Failed to complete database initialization migrations: {e}")
 
 
 ROWS_NORMALIZED_COUNT = 0

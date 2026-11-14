@@ -1,19 +1,29 @@
 from typing import List, Optional, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 EMAIL_REGEX = r"^[\w\.-]+@[\w\.-]+\.\w+$"
 
 
 # User Schemas
 class UserRegisterRequest(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_.]+$")
     email: str = Field(..., pattern=EMAIL_REGEX)
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=8)
+    display_name: Optional[str] = None
 
 
 class UserLoginRequest(BaseModel):
-    email: str = Field(..., pattern=EMAIL_REGEX)
+    identifier: Optional[str] = None  # Accepts either username or email
+    username: Optional[str] = None
+    email: Optional[str] = Field(None, pattern=EMAIL_REGEX)       # Backward compatibility
     password: str
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if not (self.identifier or self.username or self.email):
+            raise ValueError("Either identifier, username or email is required")
+        return self
 
 
 class UserResponse(BaseModel):
@@ -21,7 +31,14 @@ class UserResponse(BaseModel):
 
     id: int
     email: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_color: Optional[str] = None
     role: str
+    is_active: bool = True
+    must_change_password: bool = False
+    token_version: int = 0
+    last_login_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
 
@@ -29,6 +46,65 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class ForgotPasswordRequest(BaseModel):
+    identifier: str = Field(..., min_length=1)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_color: Optional[str] = None
+
+
+class UserPreferencesRequest(BaseModel):
+    theme: str = Field(..., pattern=r"^(light|dark|system)$")
+
+
+class BrandingUpdateRequest(BaseModel):
+    company_name: Optional[str] = None
+    tagline: Optional[str] = None
+    accent_color: Optional[str] = None
+
+
+class SupportRequestCreate(BaseModel):
+    type: str = Field(..., pattern=r"^(question|document_access|issue|feature)$")
+    subject: str = Field(..., min_length=1, max_length=255)
+    message: str = Field(..., min_length=1)
+    related_conversation_id: Optional[str] = None
+
+
+class SupportMessageCreate(BaseModel):
+    body: str = Field(..., min_length=1)
+
+
+class SupportStatusUpdate(BaseModel):
+    status: str = Field(..., pattern=r"^(open|in_progress|resolved|closed)$")
+
+
+class AdminUserCreateRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_.]+$")
+    email: str = Field(..., pattern=EMAIL_REGEX)
+    password: str = Field(..., min_length=8)
+    role: str = "user"
+    display_name: Optional[str] = None
+
+
+class AdminUserUpdateRequest(BaseModel):
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    display_name: Optional[str] = None
 
 
 # Conversation Schemas
@@ -108,7 +184,13 @@ class DocumentResponse(BaseModel):
 class AdminUserDetail(BaseModel):
     id: int
     email: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_color: Optional[str] = None
     role: str
+    is_active: bool = True
+    must_change_password: bool = False
+    last_login_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     chat_count: int
     doc_count: int

@@ -57,6 +57,9 @@ from backend.routers.auth import router as auth_router
 from backend.routers.chat import router as chat_router, messages_router
 from backend.routers.documents import router as documents_router
 from backend.routers.admin import router as admin_router
+from backend.routers.profile import router as profile_router
+from backend.routers.support import router as support_router
+from backend.routers.notifications import router as notifications_router
 
 
 def warmup_models():
@@ -216,6 +219,9 @@ app.include_router(chat_router)
 app.include_router(messages_router)
 app.include_router(documents_router)
 app.include_router(admin_router)
+app.include_router(profile_router)
+app.include_router(support_router)
+app.include_router(notifications_router)
 
 
 # Serve extracted image files (Supports cookies, <img> tags via ?token= query param, or Header)
@@ -264,9 +270,15 @@ def serve_image(
 
 
 @app.get("/api/config")
-def get_app_config():
+def get_app_config(db: Session = Depends(get_db)):
+    from backend.database import get_branding
+    branding = get_branding(db)
     config_data = {
-        "company_name": COMPANY_NAME,
+        "company_name": branding["company_name"],
+        "tagline": branding["tagline"],
+        "accent_color": branding["accent_color"],
+        "logo_url": branding["logo_url"],
+        "branding": branding,
         "assistant_intro": "I can answer questions about the company documents you have access to.",
         "demo_mode": DEMO_MODE and APP_ENV != "production",
         "build_version": BUILD_VERSION,
@@ -277,6 +289,21 @@ def get_app_config():
         config_data["demo_user_email"] = DEMO_USER_EMAIL
         config_data["demo_user_password"] = DEMO_USER_PASSWORD
     return config_data
+
+
+@app.get("/api/branding/logo")
+def serve_branding_logo(db: Session = Depends(get_db)):
+    from backend.database import get_setting
+    from backend.config import BRANDING_DIR
+    logo_val = get_setting(db, "logo")
+    if not logo_val:
+        raise HTTPException(status_code=404, detail="No logo configured")
+    logo_path = os.path.join(BRANDING_DIR, logo_val)
+    if not os.path.exists(logo_path):
+        raise HTTPException(status_code=404, detail="Logo file not found")
+    ext = Path(logo_val).suffix.lstrip(".").lower()
+    media_type = "image/svg+xml" if ext == "svg" else f"image/{ext}" if ext in ["png", "jpeg", "jpg", "webp", "gif"] else "image/png"
+    return FileResponse(logo_path, media_type=media_type)
 
 
 def check_system_health():
@@ -314,9 +341,13 @@ def check_system_health():
     except Exception:
         memory_info = {"percent": 0.0, "note": "psutil unavailable"}
 
+    from backend.database import get_branding
+    branding = get_branding()
+    current_company = branding.get("company_name", COMPANY_NAME)
+
     return {
         "status": "healthy" if is_healthy else "degraded",
-        "service": f"{COMPANY_NAME} RAG Assistant",
+        "service": f"{current_company} RAG Assistant",
         "database": db_status,
         "vector_store": vector_status,
         "llm_configured": llm_configured,

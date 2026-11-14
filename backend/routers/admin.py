@@ -1,23 +1,48 @@
 import os
+import re
 import json
-from typing import List
+import secrets
+import hashlib
+from typing import List, Optional
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
-from backend.database import get_db, User, Document, Conversation, Message, Feedback, ROWS_NORMALIZED_COUNT
+from backend.database import (
+    get_db,
+    User,
+    Document,
+    Conversation,
+    Message,
+    Feedback,
+    AppSetting,
+    PasswordReset,
+    SupportRequest,
+    SupportMessage,
+    Notification,
+    AuditLog,
+    log_audit,
+    set_setting,
+    get_setting,
+    get_branding,
+    utcnow,
+    ROWS_NORMALIZED_COUNT,
+)
 from backend.schemas import (
     DocumentResponse,
     AdminUserDetail,
     AdminStats,
     ConversationResponse,
     MessageResponse,
+    AdminUserCreateRequest,
+    AdminUserUpdateRequest,
+    BrandingUpdateRequest,
 )
-from backend.auth import require_admin
+from backend.auth import require_admin, get_password_hash, validate_password_strength
 from backend.rag.vector_store import delete_document_vectors, get_chroma_collection
 from backend.rag.llm import NOT_FOUND_MESSAGE, invalidate_query_cache
-from backend.config import UPLOAD_DIR, BUILD_VERSION
+from backend.config import UPLOAD_DIR, BUILD_VERSION, BRANDING_DIR
 from backend.concurrency import get_active_streams
 from backend.logger import get_last_error_logs
 
@@ -89,8 +114,23 @@ def delete_company_document(document_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/users", response_model=List[AdminUserDetail])
-def list_all_users(db: Session = Depends(get_db)):
-    users = db.query(User).order_by(User.created_at.desc()).all()
+def list_all_users(
+    q: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    query = db.query(User)
+    if q and q.strip():
+        term = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(User.email).like(term),
+                func.lower(User.username).like(term),
+                func.lower(User.display_name).like(term),
+            )
+        )
+    users = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
     results = []
     for u in users:
         chat_count = db.query(Conversation).filter(Conversation.user_id == u.id).count()
@@ -99,13 +139,186 @@ def list_all_users(db: Session = Depends(get_db)):
             AdminUserDetail(
                 id=u.id,
                 email=u.email,
+                username=u.username,
+                display_name=u.display_name,
+                avatar_color=u.avatar_color,
                 role=u.role,
+                is_active=u.is_active,
+                must_change_password=u.must_change_password,
+                last_login_at=u.last_login_at,
                 created_at=u.created_at,
                 chat_count=chat_count,
                 doc_count=doc_count,
             )
         )
     return results
+
+
+@router.post("/users", response_model=AdminUserDetail)
+def admin_create_user(
+    payload: AdminUserCreateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    pw_err = validate_password_strength(payload.password)
+    if pw_err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=pw_err)
+
+    clean_email = payload.email.lower().strip()
+    clean_username = payload.username.lower().strip()
+
+    if db.query(User).filter(func.lower(User.email) == clean_email).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already registered.")
+
+    if db.query(User).filter(func.lower(User.username) == clean_username).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username is already taken.")
+
+    role = "admin" if payload.role == "admin" else "user"
+    palette = ["#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#06b6d4", "#6366f1"]
+    avatar_color = palette[len(clean_email) % len(palette)]
+    display_name = payload.display_name.strip() if payload.display_name else clean_username
+
+    new_user = User(
+        email=clean_email,
+        username=clean_username,
+        display_name=display_name,
+        avatar_color=avatar_color,
+        password_hash=get_password_hash(payload.password),
+        role=role,
+        is_active=True,
+        must_change_password=False,
+        token_version=0,
+        created_at=utcnow(),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    log_audit(db, current_admin.id, "user_created_by_admin", target=new_user.email, details=f"Role: {role}")
+
+    return AdminUserDetail(
+        id=new_user.id,
+        email=new_user.email,
+        username=new_user.username,
+        display_name=new_user.display_name,
+        avatar_color=new_user.avatar_color,
+        role=new_user.role,
+        is_active=new_user.is_active,
+        must_change_password=new_user.must_change_password,
+        last_login_at=new_user.last_login_at,
+        created_at=new_user.created_at,
+        chat_count=0,
+        doc_count=0,
+    )
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserDetail)
+def admin_update_user(
+    user_id: int,
+    payload: AdminUserUpdateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Protection: Admin cannot demote or disable themselves
+    if target.id == current_admin.id:
+        if payload.is_active is False:
+            raise HTTPException(status_code=400, detail="An administrator cannot deactivate their own account.")
+        if payload.role and payload.role != "admin":
+            raise HTTPException(status_code=400, detail="An administrator cannot demote their own account.")
+
+    # Protection: Cannot disable or demote the last active admin
+    if target.role == "admin" and (payload.is_active is False or (payload.role and payload.role != "admin")):
+        active_admins = db.query(User).filter(User.role == "admin", User.is_active.is_(True)).count()
+        if active_admins <= 1:
+            raise HTTPException(status_code=400, detail="Cannot disable or demote the last active administrator.")
+
+    changes = []
+    if payload.role is not None and payload.role in ["admin", "user"]:
+        if target.role != payload.role:
+            changes.append(f"role: {target.role}->{payload.role}")
+            target.role = payload.role
+
+    if payload.is_active is not None:
+        if target.is_active != payload.is_active:
+            changes.append(f"is_active: {target.is_active}->{payload.is_active}")
+            target.is_active = payload.is_active
+            if not target.is_active:
+                target.token_version += 1  # Invalidate sessions immediately
+
+    if payload.display_name is not None:
+        target.display_name = payload.display_name.strip() or target.username
+        changes.append("display_name updated")
+
+    db.commit()
+    db.refresh(target)
+
+    log_audit(db, current_admin.id, "user_updated_by_admin", target=target.email, details="; ".join(changes))
+
+    chat_count = db.query(Conversation).filter(Conversation.user_id == target.id).count()
+    doc_count = db.query(Document).filter(Document.owner_id == target.id).count()
+
+    return AdminUserDetail(
+        id=target.id,
+        email=target.email,
+        username=target.username,
+        display_name=target.display_name,
+        avatar_color=target.avatar_color,
+        role=target.role,
+        is_active=target.is_active,
+        must_change_password=target.must_change_password,
+        last_login_at=target.last_login_at,
+        created_at=target.created_at,
+        chat_count=chat_count,
+        doc_count=doc_count,
+    )
+
+
+@router.post("/users/{user_id}/force-password-reset")
+def admin_force_password_reset(
+    user_id: int,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target.must_change_password = True
+    target.token_version += 1
+    db.commit()
+
+    log_audit(db, current_admin.id, "force_password_reset_flagged", target=target.email)
+    return {"status": "success", "message": f"Password reset forced for {target.email} on next login."}
+
+
+@router.delete("/users/{user_id}")
+def admin_deactivate_user(
+    user_id: int,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own administrator account.")
+
+    if target.role == "admin":
+        active_admins = db.query(User).filter(User.role == "admin", User.is_active.is_(True)).count()
+        if active_admins <= 1:
+            raise HTTPException(status_code=400, detail="Cannot deactivate the last active administrator.")
+
+    target.is_active = False
+    target.token_version += 1
+    db.commit()
+
+    log_audit(db, current_admin.id, "user_deactivated", target=target.email)
+    return {"status": "success", "message": f"User '{target.email}' has been deactivated."}
 
 
 @router.get("/users/{user_id}/conversations", response_model=List[ConversationResponse])
@@ -321,3 +534,233 @@ def get_diagnostics(db: Session = Depends(get_db)):
         "active_streams": get_active_streams(),
         "error_logs": get_last_error_logs(20),
     }
+
+
+# ---------------------------------------------------------------------------
+# Audit Log
+# ---------------------------------------------------------------------------
+@router.get("/audit")
+def get_audit_logs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    action: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(AuditLog)
+    if action and action.strip():
+        query = query.filter(AuditLog.action == action.strip())
+
+    total = query.count()
+    logs = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+
+    items = []
+    for log in logs:
+        actor = db.query(User).filter(User.id == log.actor_id).first() if log.actor_id else None
+        items.append({
+            "id": log.id,
+            "actor_id": log.actor_id,
+            "actor_name": actor.display_name or actor.username if actor else "System",
+            "actor_email": actor.email if actor else None,
+            "action": log.action,
+            "target": log.target,
+            "details": log.details,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        })
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "items": items,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Password Resets (Admin Inbox & Approvals)
+# ---------------------------------------------------------------------------
+@router.get("/password-resets")
+def list_password_resets(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(PasswordReset)
+    if status_filter and status_filter.strip():
+        query = query.filter(PasswordReset.status == status_filter.strip())
+
+    resets = query.order_by(PasswordReset.created_at.desc()).all()
+    results = []
+    for pr in resets:
+        user = db.query(User).filter(User.id == pr.user_id).first()
+        approver = db.query(User).filter(User.id == pr.approved_by).first() if pr.approved_by else None
+        results.append({
+            "id": pr.id,
+            "user_id": pr.user_id,
+            "username": user.username if user else "Unknown",
+            "email": user.email if user else "Unknown",
+            "status": pr.status,
+            "created_at": pr.created_at.isoformat() if pr.created_at else None,
+            "expires_at": pr.expires_at.isoformat() if pr.expires_at else None,
+            "approved_by": approver.display_name or approver.username if approver else None,
+        })
+    return results
+
+
+@router.post("/password-resets/{reset_id}/approve")
+def approve_password_reset(
+    reset_id: str,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    pr = db.query(PasswordReset).filter(PasswordReset.id == reset_id).first()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Password reset request not found")
+
+    if pr.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Cannot approve request in '{pr.status}' status.")
+
+    user = db.query(User).filter(User.id == pr.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found")
+
+    # Generate single-use token shown ONLY to the admin once
+    raw_token = secrets.token_urlsafe(32)
+    pr.token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    pr.status = "approved"
+    pr.expires_at = utcnow() + timedelta(minutes=30)
+    pr.approved_by = current_admin.id
+    user.must_change_password = True
+    db.commit()
+
+    log_audit(db, current_admin.id, "password_reset_approved", target=user.email)
+
+    return {
+        "status": "success",
+        "reset_token": raw_token,
+        "reset_url": f"/?token={raw_token}",
+        "expires_at": pr.expires_at.isoformat(),
+        "message": "One-time reset link generated. Share this securely with the user.",
+    }
+
+
+@router.post("/password-resets/{reset_id}/reject")
+def reject_password_reset(
+    reset_id: str,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    pr = db.query(PasswordReset).filter(PasswordReset.id == reset_id).first()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Password reset request not found")
+
+    pr.status = "rejected"
+    pr.approved_by = current_admin.id
+    db.commit()
+
+    log_audit(db, current_admin.id, "password_reset_rejected", target=str(pr.user_id))
+    return {"status": "success", "message": "Password reset request rejected."}
+
+
+# ---------------------------------------------------------------------------
+# Company Branding & Settings
+# ---------------------------------------------------------------------------
+@router.put("/settings/branding")
+def update_branding(
+    payload: BrandingUpdateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if payload.company_name is not None:
+        clean_name = re.sub(r"<[^>]+>", "", payload.company_name).strip()
+        if not clean_name or len(clean_name) > 100:
+            raise HTTPException(status_code=400, detail="Company name must be between 1 and 100 characters.")
+        set_setting(db, "company_name", clean_name, updated_by=current_admin.id)
+
+    if payload.tagline is not None:
+        clean_tagline = re.sub(r"<[^>]+>", "", payload.tagline).strip()
+        if len(clean_tagline) > 255:
+            raise HTTPException(status_code=400, detail="Tagline cannot exceed 255 characters.")
+        set_setting(db, "tagline", clean_tagline, updated_by=current_admin.id)
+
+    if payload.accent_color is not None:
+        color = payload.accent_color.strip()
+        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+            raise HTTPException(status_code=400, detail="Accent color must be a valid 6-character hex code (e.g. #10b981).")
+        set_setting(db, "accent_color", color, updated_by=current_admin.id)
+
+    log_audit(db, current_admin.id, "branding_updated")
+    return get_branding(db)
+
+
+@router.post("/settings/logo")
+async def upload_company_logo(
+    file: UploadFile = File(...),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    MAX_SIZE = 1024 * 1024  # 1 MB
+    content = await file.read()
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="Logo file size cannot exceed 1 MB.")
+
+    allowed_exts = {".png", ".jpg", ".jpeg", ".svg"}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail="Logo must be a PNG, JPG, or SVG file.")
+
+    # Validate image header magic bytes
+    if ext == ".png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(status_code=400, detail="Invalid PNG file.")
+    elif ext in [".jpg", ".jpeg"] and not content.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(status_code=400, detail="Invalid JPEG file.")
+    elif ext == ".svg":
+        if b"<svg" not in content.lower():
+            raise HTTPException(status_code=400, detail="Invalid SVG file.")
+
+    os.makedirs(BRANDING_DIR, exist_ok=True)
+    filename = f"company_logo{ext}"
+    filepath = os.path.join(BRANDING_DIR, filename)
+
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    set_setting(db, "logo", filename, updated_by=current_admin.id)
+    log_audit(db, current_admin.id, "logo_updated", details=filename)
+
+    return get_branding(db)
+
+
+# ---------------------------------------------------------------------------
+# Support Requests (Admin Overview)
+# ---------------------------------------------------------------------------
+@router.get("/support/requests")
+def admin_list_support_requests(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(SupportRequest)
+    if status_filter and status_filter.strip():
+        query = query.filter(SupportRequest.status == status_filter.strip())
+
+    reqs = query.order_by(SupportRequest.updated_at.desc()).all()
+    results = []
+    for r in reqs:
+        user = db.query(User).filter(User.id == r.user_id).first()
+        msg_count = db.query(SupportMessage).filter(SupportMessage.request_id == r.id).count()
+        results.append({
+            "id": r.id,
+            "type": r.type,
+            "subject": r.subject,
+            "message": r.message,
+            "status": r.status,
+            "related_conversation_id": r.related_conversation_id,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "msg_count": msg_count,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "email": user.email,
+            } if user else None,
+        })
+    return results

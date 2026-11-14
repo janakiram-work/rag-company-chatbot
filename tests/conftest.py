@@ -3,6 +3,14 @@ import shutil
 import tempfile
 import pytest
 
+# Point to isolated test database copy so original rag_company.db is NEVER touched
+_test_db_dir = tempfile.mkdtemp(prefix="rag_test_db_")
+_test_db_path = os.path.join(_test_db_dir, "test_rag.db")
+_orig_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rag_company.db")
+if os.path.exists(_orig_db_path):
+    shutil.copy2(_orig_db_path, _test_db_path)
+os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
+
 # Set demo and admin environment variables explicitly for the test suite
 os.environ["APP_ENV"] = "test"
 os.environ["SEED_DEMO_USERS"] = "true"

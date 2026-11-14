@@ -74,12 +74,16 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
 
 
 def get_user_from_token_str(token_str: str, db: Session) -> Optional[User]:
-    """Decodes JWT string and returns User, or None if invalid/expired."""
+    """Decodes JWT string and returns User, or None if invalid/expired/inactive."""
     try:
         payload = jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("sub")
         if user_id is not None:
-            return db.query(User).filter(User.id == int(user_id)).first()
+            user = db.query(User).filter(User.id == int(user_id)).first()
+            if user and user.is_active:
+                tv = payload.get("token_version")
+                if tv is None or tv == user.token_version:
+                    return user
     except Exception:
         return None
     return None
@@ -124,6 +128,23 @@ def get_current_user(
             detail=f"User {user_id} not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Invalidate session if token_version mismatch (password changed or reset)
+    token_version = payload.get("token_version")
+    if token_version is not None and token_version != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session invalidated. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Inactive / deactivated user
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been deactivated. Please contact an administrator.",
+        )
+
     return user
 
 
@@ -137,6 +158,46 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 FORBIDDEN_ADMIN_PASSWORDS = {"admin@123", "admin123", "password"}
+
+
+def validate_password_strength(password: str) -> Optional[str]:
+    """Returns error message if password does not meet requirements, else None."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if password.lower() in FORBIDDEN_ADMIN_PASSWORDS or password.lower() in {"12345678", "qwerty123", "password123"}:
+        return "This password is too common or easily guessed. Please choose a stronger password."
+    return None
+
+
+def send_reset_email(to_email: str, reset_url: str) -> bool:
+    """Send reset email if SMTP configured, else log."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from backend.config import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, SMTP_TLS, COMPANY_NAME
+    if not SMTP_HOST:
+        return False
+
+    msg = MIMEText(
+        f"Hello,\n\nA password reset request was received for your account.\n\n"
+        f"Click the link below to reset your password (valid for 30 minutes):\n{reset_url}\n\n"
+        f"If you did not request this, please ignore this email.\n"
+    )
+    msg["Subject"] = f"Password Reset Request"
+    msg["From"] = SMTP_FROM or SMTP_USER
+    msg["To"] = to_email
+
+    try:
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+        if SMTP_TLS:
+            server.starttls()
+        if SMTP_USER and SMTP_PASSWORD:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"[SMTP Error] Failed to send email to {to_email}: {e}")
+        return False
 
 
 def seed_default_users(db: Session):

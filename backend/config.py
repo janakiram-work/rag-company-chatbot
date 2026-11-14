@@ -19,7 +19,7 @@ BEHIND_PROXY = os.getenv("BEHIND_PROXY", "false").lower() in ("true", "1", "yes"
 PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
 
 # Company Branding
-COMPANY_NAME = os.getenv("COMPANY_NAME", "ABC Technologies")
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Company Assistant")
 
 # LLM Config (Groq is the only LLM provider)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -54,6 +54,7 @@ LOG_DIR = str(BASE_DIR / _log_env if not Path(_log_env).is_absolute() else Path(
 DOCS_DIR = os.path.join(UPLOAD_DIR, "docs")
 IMAGES_DIR = os.path.join(UPLOAD_DIR, "images")
 RENDERED_PAGES_DIR = os.path.join(UPLOAD_DIR, "rendered_pages")
+BRANDING_DIR = os.path.join(UPLOAD_DIR, "branding")
 DEMO_DIR = str(BASE_DIR / "demo")
 
 # Ensure required storage directories exist
@@ -62,9 +63,18 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(DOCS_DIR, exist_ok=True)
 os.makedirs(IMAGES_DIR, exist_ok=True)
 os.makedirs(RENDERED_PAGES_DIR, exist_ok=True)
+os.makedirs(BRANDING_DIR, exist_ok=True)
 os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(DEMO_DIR, exist_ok=True)
+
+# SMTP Email Configuration (Optional for Password Reset)
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "")).strip()
+SMTP_TLS = os.getenv("SMTP_TLS", "true").lower() in ("true", "1", "yes")
 
 # Security & JWT: if missing, generate once and persist to data/.jwt_secret (never regenerate on restart)
 insecure_placeholders = {

@@ -64,9 +64,18 @@ def invalidate_query_cache():
     _query_cache.clear()
 
 
+def get_current_company_name() -> str:
+    try:
+        from backend.database import get_branding
+        return get_branding().get("company_name", COMPANY_NAME)
+    except Exception:
+        return COMPANY_NAME
+
+
 def build_system_prompt(summary: Optional[str] = None) -> str:
+    company_name = get_current_company_name()
     prompt = (
-        f"You are the official {COMPANY_NAME} Knowledge Assistant.\n"
+        f"You are the official {company_name} Knowledge Assistant.\n"
         "I can answer questions about the company documents you have access to.\n"
         "Your task is to answer user questions accurately and concisely based ONLY on the provided document context.\n\n"
         "STRICT RULES:\n"
@@ -132,8 +141,9 @@ async def stream_conversation_answer(
     recent_messages: List[Dict[str, str]],
     summary: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
+    company_name = get_current_company_name()
     conv_prompt = (
-        f"You are the official {COMPANY_NAME} Knowledge Assistant. "
+        f"You are the official {company_name} Knowledge Assistant. "
         "I can answer questions about the company documents you have access to. "
         "Respond helpfully, politely, and conversationally based on the conversation history. "
         "Never say 'I couldn't find that in the documents' for greetings, expressions of thanks, "
@@ -146,7 +156,7 @@ async def stream_conversation_answer(
     messages.append({"role": "user", "content": query})
 
     if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-        yield f"Hello! I am the {COMPANY_NAME} Assistant. The Groq API key is not configured, so AI responses are offline."
+        yield f"Hello! I am the {company_name} Assistant. The Groq API key is not configured, so AI responses are offline."
         return
 
     try:
@@ -236,8 +246,9 @@ async def stream_visual_answer(
         img_captions.append(f"Image {idx}: {f} ({l}) - {cap}")
     captions_text = "\n".join(img_captions)
 
+    company_name = get_current_company_name()
     system_prompt = (
-        f"You are the official {COMPANY_NAME} Knowledge Assistant. "
+        f"You are the official {company_name} Knowledge Assistant. "
         "The user interface displays the attached images below your answer. "
         "Never say you cannot display or show images. "
         "In 1-3 sentences describe what the images show using their captions."
