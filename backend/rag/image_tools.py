@@ -60,9 +60,6 @@ def handle_show_images(
         if not embedded_assets:
             hashes = db.query(ImageHash).filter(ImageHash.doc_id == doc.id).all()
             for h in hashes:
-                h_name = Path(h.image_path).name
-                if not os.path.exists(os.path.join(IMAGES_DIR, h_name)) and not os.path.exists(h.image_path):
-                    continue
                 all_assets.append({
                     "id": h.id,
                     "doc_id": doc.id,
@@ -74,9 +71,6 @@ def handle_show_images(
                 })
         else:
             for ea in embedded_assets:
-                ea_name = Path(ea.path).name
-                if not os.path.exists(os.path.join(IMAGES_DIR, ea_name)) and not os.path.exists(ea.path):
-                    continue
                 all_assets.append({
                     "id": ea.id,
                     "doc_id": doc.id,
