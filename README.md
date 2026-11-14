@@ -170,8 +170,24 @@ This guide walks through deploying the Enterprise RAG Assistant on a fresh serve
 - **Disk Space**: At least 10 GB free space for packages, models, and uploads.
 - **Node.js LTS**: Only required if you intend to rebuild the frontend assets from `frontend/src`. The production build is pre-compiled and tracked inside `frontend/dist/`, so Node.js is **not required** on the deployment server for standard installations.
 - **Groq API Key**: A valid API key from [Groq Cloud Console](https://console.groq.com/). Groq is the only third-party LLM provider used by the system.
+- **Dependency Locking**: A lock file (`requirements.lock`) is optional and must be generated on the target Python version (`pip freeze > requirements.lock`).
 
-### 2. Linux Server Deployment (Ubuntu / Debian)
+> **Platform Verification**: Verified on Windows with Python 3.14. Linux, Python 3.11 and Docker not run yet.
+
+### 2. Project Structure
+
+| Directory / File | Description |
+|---|---|
+| `backend/` | FastAPI server, RAG pipeline, routers, database models, schemas, and concurrency controls |
+| `frontend/` | React 18 SPA source code (`frontend/src`) and tracked production bundle (`frontend/dist`) |
+| `demo/` | Sample enterprise documents (PDF, DOCX, TXT, PNG) and demo images |
+| `eval/` | RAG evaluation datasets (`questions.json`) and benchmark reports |
+| `scripts/` | Management utilities (`setup.py`, `smoke_test.py`, `prune_users.py`, `set_password.py`, `load_test.py`) |
+| `tests/` | Comprehensive test suite with isolated synthetic environment fixtures |
+| `run.bat` / `run.sh` | Direct venv startup scripts for Windows and Linux |
+| `Dockerfile` / `docker-compose.yml` | Container deployment definitions (untested) |
+
+### 3. Linux Server Deployment (Ubuntu / Debian)
 
 ```bash
 # Update system packages and install Python 3.11 prerequisites
@@ -196,7 +212,7 @@ python scripts/setup.py
 python scripts/download_models.py
 ```
 
-### 3. Windows Server Deployment
+### 4. Windows Server Deployment
 
 ```powershell
 # Clone repository
@@ -218,7 +234,7 @@ python scripts/setup.py
 python scripts/download_models.py
 ```
 
-### 4. Configuration: Every `.env` Variable Explained
+### 5. Configuration: Every `.env` Variable Explained
 
 Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRET`. Edit `.env` to configure your environment:
 
@@ -269,7 +285,7 @@ Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRE
 | `SMTP_FROM` | `""` | Outbound email sender address. |
 | `SMTP_TLS` | `true` | Enable TLS encryption for SMTP delivery. |
 
-### 5. Starting the Server
+### 6. Starting the Server
 
 - **Linux**:
   ```bash
@@ -281,7 +297,7 @@ Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRE
   run.bat
   ```
 
-### 6. Opening Firewall Ports
+### 7. Opening Firewall Ports
 
 - **Ubuntu (UFW)**:
   ```bash
@@ -297,7 +313,7 @@ Run `python scripts/setup.py` to generate `.env` with a secure random `JWT_SECRE
   New-NetFirewallRule -DisplayName "Enterprise RAG Chatbot" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
   ```
 
-### 7. Nginx Reverse Proxy with HTTPS & SSE Buffering Configuration
+### 8. Nginx Reverse Proxy with HTTPS & SSE Buffering Configuration
 
 For production HTTPS, place FastAPI behind an Nginx reverse proxy. SSE streaming requires disabling proxy buffering:
 
@@ -340,7 +356,7 @@ server {
 
 > **IMPORTANT (HTTPS & Cookies)**: When serving behind HTTPS or an SSL-terminating reverse proxy, set `COOKIE_SECURE=true` and `BEHIND_PROXY=true` in `.env`. If `COOKIE_SECURE=true` is inadvertently used on plain HTTP, modern browsers will reject the session cookies causing an endless login loop.
 
-### 8. Systemd Service Configuration (Linux)
+### 9. Systemd Service Configuration (Linux)
 
 Create a systemd unit file at `/etc/systemd/system/rag-chatbot.service`:
 
@@ -370,7 +386,7 @@ sudo systemctl start rag-chatbot
 sudo systemctl status rag-chatbot
 ```
 
-### 9. Recommended Server Sizing
+### 10. Recommended Server Sizing
 
 | Workload | Recommended RAM | CPU Cores | Supported Concurrent Users |
 |---|---|---|---|
@@ -382,7 +398,7 @@ sudo systemctl status rag-chatbot
 - `MAX_HEAVY_TASKS=2` (default) ensures heavy CPU/memory operations (embedding, SIFT, OCR) are throttled via bounded semaphores to prevent out-of-memory errors on 2-4 GB VPS instances.
 - Fast token streaming with Groq offloads LLM compute to the cloud, keeping local server memory footprint low (~800 MB–1.2 GB idle/active).
 
-### 10. Sharing Through ngrok (Free Tunnel)
+### 11. Sharing Through ngrok (Free Tunnel)
 
 You can share your local or LAN instance publicly over the internet using ngrok:
 ```bash
@@ -404,7 +420,7 @@ ngrok http 8000
 3. **Ngrok Warning Screen Bypass**: The frontend automatically sends `ngrok-skip-browser-warning: 1` on all fetch and SSE calls so API endpoints are never intercepted by ngrok's interstitial page.
 4. **Free-tier Limits**: Ngrok free accounts have connection rate limits and dynamic ephemeral URLs. For permanent production use, deploy on a VPS with Nginx and a custom domain.
 
-### 11. Backup and Restore Procedures
+### 12. Backup and Restore Procedures
 
 The persistent state consists of three directories:
 1. **Relational Database**: `rag_company.db` (SQLite) or PostgreSQL.
@@ -435,7 +451,7 @@ tar -xzf backups/chroma_2026-11-13.tar.gz
 sudo systemctl start rag-chatbot
 ```
 
-### 12. Upgrade Instructions
+### 13. Upgrade Instructions
 
 To apply new code versions without losing data:
 ```bash
@@ -447,14 +463,11 @@ git pull origin main
 # Update dependencies
 ./venv/bin/pip install -r requirements.txt
 
-# Run any database migrations
-./venv/bin/alembic upgrade head
-
-# Restart service
+# Restart service (database schema updates run automatically at startup)
 sudo systemctl restart rag-chatbot
 ```
 
-### 13. Troubleshooting Guide
+### 14. Troubleshooting Guide
 
 | Issue / Symptom | Possible Root Cause | Resolution |
 |---|---|---|

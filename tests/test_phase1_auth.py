@@ -36,13 +36,13 @@ def test_password_hashing():
 def test_seed_default_users(db):
     seed_default_users(db)
 
-    admin = db.query(User).filter(User.email == "admin@abctechnologies.com").first()
+    admin = db.query(User).filter(User.email == os.getenv("ADMIN_EMAIL", "admin@test.local")).first()
     assert admin is not None
     assert admin.role == "admin"
     admin_pw = os.getenv("ADMIN_PASSWORD", "AdminTestSecurePass!2026")
     assert verify_password(admin_pw, admin.password_hash) is True
 
-    user = db.query(User).filter(User.email == "user@abctechnologies.com").first()
+    user = db.query(User).filter(User.email == os.getenv("DEMO_USER_EMAIL", "user@test.local")).first()
     assert user is not None
     assert user.role == "user"
     user_pw = os.getenv("DEMO_USER_PASSWORD", "UserTestSecurePass!2026")

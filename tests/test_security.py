@@ -1,3 +1,4 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -33,8 +34,8 @@ def setup_data():
     app.dependency_overrides[get_db] = override_get_db
     with TestingSessionLocal() as db:
         seed_default_users(db)
-        admin = db.query(User).filter(User.email == "admin@abctechnologies.com").first()
-        user = db.query(User).filter(User.email == "user@abctechnologies.com").first()
+        admin = db.query(User).filter(User.email == os.getenv("ADMIN_EMAIL", "admin@test.local")).first()
+        user = db.query(User).filter(User.email == os.getenv("DEMO_USER_EMAIL", "user@test.local")).first()
         admin_token = create_access_token({"sub": str(admin.id), "email": admin.email, "role": "admin"})
         user_token = create_access_token({"sub": str(user.id), "email": user.email, "role": "user"})
 

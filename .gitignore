@@ -26,8 +26,9 @@ build/
 *.tar.gz
 *.rar
 
-# Application logs
+# Application logs & backups
 logs/
+backups/
 
 # OS / Editor files
 .DS_Store

@@ -78,7 +78,7 @@ def test_auth_routes():
     # 6. Login with seeded admin
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "admin@abctechnologies.com", "password": os.getenv("ADMIN_PASSWORD", "AdminTestSecurePass!2026")},
+        json={"email": os.getenv("ADMIN_EMAIL", "admin@test.local"), "password": os.getenv("ADMIN_PASSWORD", "AdminTestSecurePass!2026")},
     )
     assert admin_login.status_code == 200
     assert admin_login.json()["user"]["role"] == "admin"
@@ -86,7 +86,7 @@ def test_auth_routes():
     # 7. Login with invalid password
     bad_login = client.post(
         "/api/auth/login",
-        json={"email": "admin@abctechnologies.com", "password": "WrongPassword"},
+        json={"email": os.getenv("ADMIN_EMAIL", "admin@test.local"), "password": "WrongPassword"},
     )
     assert bad_login.status_code == 401
 

@@ -3,41 +3,70 @@ import shutil
 import tempfile
 import pytest
 
-# Point to isolated test database copy so original rag_company.db is NEVER touched
-_test_db_dir = tempfile.mkdtemp(prefix="rag_test_db_")
-_test_db_path = os.path.join(_test_db_dir, "test_rag.db")
-_orig_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rag_company.db")
-if os.path.exists(_orig_db_path):
-    shutil.copy2(_orig_db_path, _test_db_path)
-os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
+# 1. Create isolated session-wide temporary directory
+_test_session_dir = tempfile.mkdtemp(prefix="rag_test_session_")
+_test_db_path = os.path.join(_test_session_dir, "test_rag.db")
+_test_chroma = os.path.join(_test_session_dir, "chroma")
+_test_uploads = os.path.join(_test_session_dir, "uploads")
+_test_docs = os.path.join(_test_uploads, "docs")
+_test_images = os.path.join(_test_uploads, "images")
+_test_logs = os.path.join(_test_session_dir, "logs")
+_test_storage = _test_session_dir
 
-# Set demo and admin environment variables explicitly for the test suite
+os.makedirs(_test_chroma, exist_ok=True)
+os.makedirs(_test_docs, exist_ok=True)
+os.makedirs(_test_images, exist_ok=True)
+os.makedirs(_test_logs, exist_ok=True)
+
+# 2. Configure environment variables (redirect all paths & set test-only emails)
 os.environ["APP_ENV"] = "test"
+os.environ["DATABASE_URL"] = f"sqlite:///{_test_db_path}"
+os.environ["CHROMA_DIR"] = _test_chroma
+os.environ["UPLOAD_DIR"] = _test_uploads
+os.environ["LOG_DIR"] = _test_logs
+os.environ["STORAGE_DIR"] = _test_storage
+
 os.environ["SEED_DEMO_USERS"] = "true"
-os.environ["DEMO_ADMIN_EMAIL"] = "admin@abctechnologies.com"
-os.environ["DEMO_ADMIN_PASSWORD"] = "AdminTestSecurePass!2026"
-os.environ["DEMO_USER_EMAIL"] = "user@abctechnologies.com"
-os.environ["DEMO_USER_PASSWORD"] = "UserTestSecurePass!2026"
-os.environ["ADMIN_EMAIL"] = "admin@abctechnologies.com"
+os.environ["ADMIN_EMAIL"] = "admin@test.local"
 os.environ["ADMIN_PASSWORD"] = "AdminTestSecurePass!2026"
+os.environ["DEMO_ADMIN_EMAIL"] = "admin@test.local"
+os.environ["DEMO_ADMIN_PASSWORD"] = "AdminTestSecurePass!2026"
+os.environ["DEMO_USER_EMAIL"] = "user@test.local"
+os.environ["DEMO_USER_PASSWORD"] = "UserTestSecurePass!2026"
 
+# 3. Rebind backend.config module globals
 import backend.config as cfg
-cfg.DATABASE_URL = f"sqlite:///{_test_db_path}"
 cfg.APP_ENV = "test"
+cfg.DATABASE_URL = f"sqlite:///{_test_db_path}"
+cfg.CHROMA_PERSIST_DIR = _test_chroma
+cfg.UPLOAD_DIR = _test_uploads
+cfg.DOCS_DIR = _test_docs
+cfg.IMAGES_DIR = _test_images
+cfg.LOG_DIR = _test_logs
+cfg.STORAGE_DIR = _test_storage
 cfg.SEED_DEMO_USERS = True
-cfg.DEMO_ADMIN_EMAIL = "admin@abctechnologies.com"
-cfg.DEMO_ADMIN_PASSWORD = "AdminTestSecurePass!2026"
-cfg.DEMO_USER_EMAIL = "user@abctechnologies.com"
-cfg.DEMO_USER_PASSWORD = "UserTestSecurePass!2026"
-cfg.ADMIN_EMAIL = "admin@abctechnologies.com"
+cfg.ADMIN_EMAIL = "admin@test.local"
 cfg.ADMIN_PASSWORD = "AdminTestSecurePass!2026"
+cfg.DEMO_ADMIN_EMAIL = "admin@test.local"
+cfg.DEMO_ADMIN_PASSWORD = "AdminTestSecurePass!2026"
+cfg.DEMO_USER_EMAIL = "user@test.local"
+cfg.DEMO_USER_PASSWORD = "UserTestSecurePass!2026"
 
+# 4. Rebind database engine & sessionmaker to the empty temp database
 import backend.database as db_mod
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
 db_mod.DATABASE_URL = f"sqlite:///{_test_db_path}"
 db_mod.engine = create_engine(f"sqlite:///{_test_db_path}", connect_args={"check_same_thread": False})
 db_mod.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_mod.engine)
+
+# Initialize schema and seed test-only default users in empty temp DB
+db_mod.init_db()
+from backend.auth import seed_default_users
+with db_mod.SessionLocal() as session:
+    seed_default_users(session)
+    session.commit()
 
 import backend.rag.vector_store as vs
 
@@ -45,43 +74,33 @@ import backend.rag.vector_store as vs
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     """
-    Ensure all tests run against an isolated temporary Chroma directory
-    and temporary uploads directory so production data is never touched (Rule A.2).
+    Session-start validation and cleanup for full test isolation.
+    Guarantees no tests ever access real project data folders.
     """
-    temp_dir = tempfile.mkdtemp(prefix="rag_test_env_")
-    temp_chroma = os.path.join(temp_dir, "chroma")
-    temp_uploads = os.path.join(temp_dir, "uploads")
-    temp_docs = os.path.join(temp_uploads, "docs")
-    temp_images = os.path.join(temp_uploads, "images")
-    os.makedirs(temp_chroma, exist_ok=True)
-    os.makedirs(temp_docs, exist_ok=True)
-    os.makedirs(temp_images, exist_ok=True)
+    real_proj = os.path.normcase(os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
+    real_db = os.path.normcase(os.path.join(real_proj, "rag_company.db"))
+    real_chroma = os.path.normcase(os.path.join(real_proj, "chroma_data"))
+    real_uploads = os.path.normcase(os.path.join(real_proj, "uploads"))
 
-    orig_chroma = cfg.CHROMA_PERSIST_DIR
-    orig_upload = cfg.UPLOAD_DIR
-    orig_docs = cfg.DOCS_DIR
-    orig_images = cfg.IMAGES_DIR
+    cur_db = os.path.normcase(os.path.abspath(_test_db_path))
+    cur_chroma = os.path.normcase(os.path.abspath(cfg.CHROMA_PERSIST_DIR))
+    cur_uploads = os.path.normcase(os.path.abspath(cfg.UPLOAD_DIR))
 
-    cfg.CHROMA_PERSIST_DIR = temp_chroma
-    cfg.UPLOAD_DIR = temp_uploads
-    cfg.DOCS_DIR = temp_docs
-    cfg.IMAGES_DIR = temp_images
+    # Assert test paths resolve strictly outside project data folders
+    assert cur_db != real_db, "DATABASE_URL must not point to real rag_company.db"
+    assert not cur_chroma.startswith(real_chroma), "CHROMA_DIR must not resolve inside real chroma_data"
+    assert not cur_uploads.startswith(real_uploads), "UPLOAD_DIR must not resolve inside real uploads"
 
     # Reset vector store client to point to temp Chroma
     vs._chroma_client = None
     vs._collection = None
 
-    yield temp_dir
+    yield _test_session_dir
 
-    # Cleanup
+    # Cleanup at session end
     vs._chroma_client = None
     vs._collection = None
-    cfg.CHROMA_PERSIST_DIR = orig_chroma
-    cfg.UPLOAD_DIR = orig_upload
-    cfg.DOCS_DIR = orig_docs
-    cfg.IMAGES_DIR = orig_images
-
     try:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.rmtree(_test_session_dir, ignore_errors=True)
     except Exception:
         pass
