@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Plus,
   MessageSquare,
@@ -10,6 +10,7 @@ import {
   Sparkles,
   ChevronRight,
   Filter,
+  X,
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -24,7 +25,18 @@ export default function Sidebar({
   isDarkMode,
   onToggleDarkMode,
   onLogout,
+  isMobileOpen = false,
+  onCloseMobile = null,
 }) {
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isMobileOpen && onCloseMobile) {
+        onCloseMobile();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileOpen, onCloseMobile]);
   // Group conversations by date
   const groupConversations = () => {
     const today = new Date();
@@ -67,8 +79,11 @@ export default function Sidebar({
             return (
               <div
                 key={c.id}
-                onClick={() => onSelectConversation(c.id)}
-                className={`group flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition ${
+                onClick={() => {
+                  onSelectConversation(c.id);
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium cursor-pointer min-h-[44px] transition ${
                   isActive
                     ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-semibold ring-1 ring-emerald-500/40 shadow-xs'
                     : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800/60'
@@ -89,7 +104,7 @@ export default function Sidebar({
                     e.stopPropagation();
                     onDeleteConversation(c.id);
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 hover:text-red-600 transition"
+                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/20 hover:text-red-600 transition"
                   title="Delete chat"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -103,31 +118,59 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-64 flex flex-col h-screen bg-gray-50/80 dark:bg-zinc-900/90 border-r border-gray-200 dark:border-zinc-800 select-none">
-      {/* Top Header & New Chat */}
-      <div className="p-3 border-b border-gray-200/60 dark:border-zinc-800">
-        <div className="flex items-center gap-2.5 px-2 py-1 mb-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-gray-900 dark:text-white leading-none">ABC Technologies</h2>
-            <span className="text-[10px] text-gray-400 dark:text-zinc-500">Enterprise Knowledge</span>
-          </div>
-        </div>
+    <>
+      {/* Mobile Backdrop */}
+      {isMobileOpen && (
+        <div
+          onClick={onCloseMobile}
+          className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity"
+        />
+      )}
 
-        <button
-          type="button"
-          onClick={onNewChat}
-          className="w-full py-2 px-3 bg-white dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700/60 text-gray-800 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm transition"
-        >
-          <span className="flex items-center gap-2">
-            <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            New Chat
-          </span>
-          <span className="text-[10px] text-gray-400">Ctrl+K</span>
-        </button>
-      </div>
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-64 flex flex-col h-[100dvh] bg-gray-50 dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 select-none transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        }`}
+      >
+        {/* Top Header & New Chat */}
+        <div className="p-3 border-b border-gray-200/60 dark:border-zinc-800">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2.5 px-1 py-1">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white leading-none">ABC Technologies</h2>
+                <span className="text-[10px] text-gray-400 dark:text-zinc-500">Enterprise Knowledge</span>
+              </div>
+            </div>
+            {onCloseMobile && (
+              <button
+                type="button"
+                onClick={onCloseMobile}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:hover:bg-zinc-800 md:hidden"
+                aria-label="Close sidebar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onNewChat();
+              if (onCloseMobile) onCloseMobile();
+            }}
+            className="w-full py-2.5 px-3 min-h-[44px] bg-white dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700/60 text-gray-800 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm transition"
+          >
+            <span className="flex items-center gap-2">
+              <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              New Chat
+            </span>
+            <span className="text-[10px] text-gray-400">Ctrl+K</span>
+          </button>
+        </div>
 
       {/* Conversations List */}
       <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
@@ -207,5 +250,6 @@ export default function Sidebar({
         </div>
       </div>
     </aside>
+    </>
   );
 }

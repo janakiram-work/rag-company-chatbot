@@ -7,6 +7,8 @@ from backend.schemas import UserRegisterRequest, UserLoginRequest, TokenResponse
 from backend.auth import (
     verify_password,
     get_password_hash,
+    verify_password_async,
+    get_password_hash_async,
     create_access_token,
     create_refresh_token,
     get_current_user,
@@ -17,6 +19,7 @@ from backend.config import (
     JWT_SECRET,
     JWT_ALGORITHM,
     COOKIE_SECURE,
+    BEHIND_PROXY,
 )
 from backend.rate_limiter import (
     limiter,
@@ -29,14 +32,28 @@ from backend.rate_limiter import (
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+def should_use_secure_cookie(request: Optional[Request] = None) -> bool:
+    if COOKIE_SECURE:
+        return True
+    if request:
+        if BEHIND_PROXY:
+            proto = request.headers.get("x-forwarded-proto", "").lower()
+            if proto == "https":
+                return True
+        if request.url.scheme == "https":
+            return True
+    return False
+
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str, request: Optional[Request] = None):
+    sec = should_use_secure_cookie(request)
     response.set_cookie(
         key="access_token",
         value=access_token,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
         samesite="lax",
-        secure=COOKIE_SECURE,
+        secure=sec,
         path="/",
     )
     response.set_cookie(
@@ -45,30 +62,32 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         httponly=True,
         samesite="lax",
-        secure=COOKIE_SECURE,
+        secure=sec,
         path="/",
     )
 
 
 @router.post("/register", response_model=TokenResponse)
-def register_user(
+async def register_user(
     request: Request,
     response: Response,
     payload: UserRegisterRequest,
     db: Session = Depends(get_db),
 ):
     # Check if email is taken
-    existing = db.query(User).filter(User.email == payload.email.lower().strip()).first()
+    clean_email = payload.email.lower().strip()
+    existing = db.query(User).filter(User.email == clean_email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email already exists",
         )
 
-    # Security requirement: /register ALWAYS creates role=user
+    # Security requirement: /register ALWAYS creates role=user; hash in worker thread
+    hashed_pw = await get_password_hash_async(payload.password)
     user = User(
-        email=payload.email.lower().strip(),
-        password_hash=get_password_hash(payload.password),
+        email=clean_email,
+        password_hash=hashed_pw,
         role="user",
     )
     db.add(user)
@@ -77,7 +96,7 @@ def register_user(
 
     token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
     refresh = create_refresh_token({"sub": str(user.id), "email": user.email, "role": user.role})
-    set_auth_cookies(response, token, refresh)
+    set_auth_cookies(response, token, refresh, request)
 
     return TokenResponse(
         access_token=token,
@@ -87,13 +106,14 @@ def register_user(
 
 
 @router.post("/login", response_model=TokenResponse)
-def login_user(
+async def login_user(
     request: Request,
     response: Response,
     payload: UserLoginRequest,
     db: Session = Depends(get_db),
 ):
-    key = get_login_key(request, payload.email)
+    clean_email = payload.email.lower().strip()
+    key = get_login_key(request, clean_email)
     retry_after = check_login_rate_limit(key)
     if retry_after is not None:
         raise HTTPException(
@@ -102,8 +122,12 @@ def login_user(
             headers={"Retry-After": str(retry_after)},
         )
 
-    user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
-    if not user or not verify_password(payload.password, user.password_hash):
+    user = db.query(User).filter(User.email == clean_email).first()
+    is_valid = False
+    if user:
+        is_valid = await verify_password_async(payload.password, user.password_hash)
+
+    if not user or not is_valid:
         retry_after = record_failed_login(key)
         # Check if this failure hit the limit
         if check_login_rate_limit(key) is not None:
@@ -122,7 +146,7 @@ def login_user(
 
     token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
     refresh = create_refresh_token({"sub": str(user.id), "email": user.email, "role": user.role})
-    set_auth_cookies(response, token, refresh)
+    set_auth_cookies(response, token, refresh, request)
 
     return TokenResponse(
         access_token=token,
@@ -178,7 +202,7 @@ def refresh_token(
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
         samesite="lax",
-        secure=COOKIE_SECURE,
+        secure=should_use_secure_cookie(request),
         path="/",
     )
 

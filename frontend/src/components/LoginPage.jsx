@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiLogin, apiRegister, setAuthToken, setStoredUser } from '../api';
+import { apiLogin, apiRegister, setAuthToken, setStoredUser, formatError } from '../api';
 import { ShieldCheck, UserCheck, Lock, Mail, AlertCircle, ArrowRight, Sparkles } from 'lucide-react';
 
 export default function LoginPage({ onLoginSuccess, initialError = '' }) {
@@ -47,31 +47,35 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
     e.preventDefault();
     if (countdown > 0) return;
     setError('');
+
+    const trimmedEmail = email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setError('Enter a valid email such as name@company.com');
+      return;
+    }
+
     setLoading(true);
 
     try {
       let data;
       if (isRegister) {
-        data = await apiRegister(email, password);
+        data = await apiRegister(trimmedEmail, password);
       } else {
-        data = await apiLogin(email, password);
+        data = await apiLogin(trimmedEmail, password);
       }
       setAuthToken(data.access_token);
       setStoredUser(data.user);
       onLoginSuccess(data.user);
     } catch (err) {
-      const msg = err.message || '';
-      if (msg.toLowerCase().includes('too many attempts') || msg.toLowerCase().includes('rate limit')) {
-        const match = msg.match(/(\d+)\s*seconds?/i);
+      const formatted = formatError(err);
+      if (formatted.toLowerCase().includes('too many attempts') || formatted.toLowerCase().includes('rate limit')) {
+        const match = formatted.match(/(\d+)\s*seconds?/i);
         const sec = match ? parseInt(match[1], 10) : 60;
         setCountdown(sec);
         setError(`Too many attempts. Try again in ${sec} seconds`);
-      } else if (msg.toLowerCase().includes('invalid email or password') || msg.toLowerCase().includes('credentials') || msg.includes('401')) {
-        setError('Invalid email or password');
-      } else if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('unreachable') || msg.toLowerCase().includes('server unreachable')) {
-        setError('Server unreachable');
       } else {
-        setError(msg || 'Authentication failed');
+        setError(formatted);
       }
     } finally {
       setLoading(false);

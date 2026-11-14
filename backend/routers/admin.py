@@ -1,12 +1,12 @@
 import os
 import json
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from backend.database import get_db, User, Document, Conversation, Message, Feedback
+from backend.database import get_db, User, Document, Conversation, Message, Feedback, ROWS_NORMALIZED_COUNT
 from backend.schemas import (
     DocumentResponse,
     AdminUserDetail,
@@ -16,8 +16,10 @@ from backend.schemas import (
 )
 from backend.auth import require_admin
 from backend.rag.vector_store import delete_document_vectors, get_chroma_collection
-from backend.rag.llm import NOT_FOUND_MESSAGE
-from backend.config import UPLOAD_DIR
+from backend.rag.llm import NOT_FOUND_MESSAGE, invalidate_query_cache
+from backend.config import UPLOAD_DIR, BUILD_VERSION
+from backend.concurrency import get_active_streams
+from backend.logger import get_last_error_logs
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"], dependencies=[Depends(require_admin)])
 
@@ -77,6 +79,7 @@ def delete_company_document(document_id: str, db: Session = Depends(get_db)):
 
     # Cascade delete in Chroma and remove disk files
     deleted_vectors = delete_document_vectors(document_id, filepath)
+    invalidate_query_cache()
 
     return {
         "status": "success",
@@ -127,8 +130,18 @@ def get_user_chat_history(user_id: int, db: Session = Depends(get_db)):
 
         messages = []
         for m in c.messages:
-            sources = json.loads(m.sources_json) if m.sources_json else []
-            images = json.loads(m.images_json) if m.images_json else []
+            try:
+                sources = json.loads(m.sources_json) if m.sources_json else []
+                if not isinstance(sources, list):
+                    sources = []
+            except Exception:
+                sources = []
+            try:
+                images = json.loads(m.images_json) if m.images_json else []
+                if not isinstance(images, list):
+                    images = []
+            except Exception:
+                images = []
             messages.append(
                 MessageResponse(
                     id=m.id,
@@ -272,4 +285,39 @@ def get_analytics(db: Session = Depends(get_db)):
         "missing_docs_questions": missing_docs_questions,
         "thumbs_down_list": thumbs_down_list,
         "daily_messages": daily_messages,
+    }
+
+
+@router.get("/diagnostics")
+def get_diagnostics(db: Session = Depends(get_db)):
+    total_users = db.query(User).count()
+    total_docs = db.query(Document).count()
+    total_convs = db.query(Conversation).count()
+    total_msgs = db.query(Message).count()
+
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        mem_info = {
+            "percent": mem.percent,
+            "total_mb": round(mem.total / (1024 * 1024), 1),
+            "used_mb": round(mem.used / (1024 * 1024), 1),
+            "available_mb": round(mem.available / (1024 * 1024), 1),
+        }
+    except Exception:
+        mem_info = {"percent": 0.0, "note": "psutil unavailable"}
+
+    return {
+        "build_version": BUILD_VERSION,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "counts": {
+            "users": total_users,
+            "documents": total_docs,
+            "conversations": total_convs,
+            "messages": total_msgs,
+        },
+        "rows_normalized_count": ROWS_NORMALIZED_COUNT,
+        "memory": mem_info,
+        "active_streams": get_active_streams(),
+        "error_logs": get_last_error_logs(20),
     }

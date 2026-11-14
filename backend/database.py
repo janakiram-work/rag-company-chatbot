@@ -1,4 +1,5 @@
 import uuid
+import json
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import (
@@ -199,5 +200,112 @@ def init_db():
                                 attached_at=c.created_at or utcnow(),
                             ))
             db.commit()
+            normalize_database_records(db)
     except Exception as e:
         logger.warning(f"Failed to migrate conversation active_doc_id: {e}")
+
+
+ROWS_NORMALIZED_COUNT = 0
+
+
+def normalize_database_records(db: Session) -> int:
+    """
+    Idempotent startup repair & normalization (no deletion of actual data rows):
+    - Null, empty or malformed sources_json, images_json, meta and latency_ms
+    - Drop stale active_doc_id, default_doc_id, or attachments pointing to deleted documents
+    - Drop corrupt or malformed pending_clarification
+    - Backfill missing timestamps
+    """
+    global ROWS_NORMALIZED_COUNT
+    normalized = 0
+    now = utcnow()
+
+    try:
+        existing_doc_ids = {str(d.id) for d in db.query(Document.id).all()}
+
+        # 1. Conversations
+        convs = db.query(Conversation).all()
+        for c in convs:
+            changed = False
+            if c.active_doc_id and c.active_doc_id not in existing_doc_ids:
+                c.active_doc_id = None
+                changed = True
+            if c.default_doc_id and c.default_doc_id not in existing_doc_ids:
+                c.default_doc_id = None
+                changed = True
+            if c.pending_clarification:
+                try:
+                    p = json.loads(c.pending_clarification)
+                    if not isinstance(p, dict):
+                        c.pending_clarification = None
+                        changed = True
+                except Exception:
+                    c.pending_clarification = None
+                    changed = True
+            if not c.created_at:
+                c.created_at = now
+                changed = True
+            if not c.updated_at:
+                c.updated_at = now
+                changed = True
+            if changed:
+                normalized += 1
+
+        # 2. Attachments pointing to deleted docs
+        stale_attachments = db.query(ConversationDocument).all()
+        for att in stale_attachments:
+            if att.doc_id not in existing_doc_ids:
+                db.delete(att)
+                normalized += 1
+
+        # 3. Messages
+        msgs = db.query(Message).all()
+        for m in msgs:
+            changed = False
+            if not m.created_at:
+                m.created_at = now
+                changed = True
+            if m.sources_json:
+                try:
+                    s = json.loads(m.sources_json)
+                    if not isinstance(s, list):
+                        m.sources_json = None
+                        changed = True
+                except Exception:
+                    m.sources_json = None
+                    changed = True
+            if m.images_json:
+                try:
+                    img = json.loads(m.images_json)
+                    if not isinstance(img, list):
+                        m.images_json = None
+                        changed = True
+                except Exception:
+                    m.images_json = None
+                    changed = True
+            if m.meta:
+                try:
+                    mt = json.loads(m.meta)
+                    if not isinstance(mt, dict):
+                        m.meta = None
+                        changed = True
+                except Exception:
+                    m.meta = None
+                    changed = True
+            if m.latency_ms is not None:
+                try:
+                    m.latency_ms = float(m.latency_ms)
+                except Exception:
+                    m.latency_ms = None
+                    changed = True
+            if changed:
+                normalized += 1
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Error normalizing database records: {e}")
+
+    ROWS_NORMALIZED_COUNT += normalized
+    return normalized
+

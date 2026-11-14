@@ -17,6 +17,7 @@ import {
   Maximize2,
   ThumbsUp,
   ThumbsDown,
+  Menu,
 } from 'lucide-react';
 import {
   apiStreamChatMessage,
@@ -37,6 +38,7 @@ export default function ChatArea({
   onConversationDone,
   onConversationCreated,
   currentUser,
+  onToggleMobileSidebar = null,
 }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -424,17 +426,27 @@ export default function ChatArea({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen bg-white dark:bg-zinc-950 overflow-hidden relative">
+    <div className="flex-1 flex flex-col h-[100dvh] bg-white dark:bg-zinc-950 overflow-hidden relative">
       {/* Top Header */}
-      <header className="h-14 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-950/80 backdrop-blur z-10">
-        <div className="flex items-center gap-3">
-          <span className="font-semibold text-sm text-gray-800 dark:text-zinc-200">
+      <header className="h-14 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 bg-white/80 dark:bg-zinc-950/80 backdrop-blur z-10">
+        <div className="flex items-center gap-2 sm:gap-3 overflow-hidden">
+          {onToggleMobileSidebar && (
+            <button
+              type="button"
+              onClick={onToggleMobileSidebar}
+              className="p-2 -ml-1 rounded-lg text-gray-500 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 md:hidden"
+              aria-label="Open sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+          <span className="font-semibold text-sm text-gray-800 dark:text-zinc-200 truncate">
             {conversation?.title || 'New Conversation'}
           </span>
 
           {/* Active Attachments / Filter Badge */}
           {attachedDocs.length > 0 || (uploadStatus && uploadStatus.state === 'uploading') ? (
-            <div className="flex items-center flex-wrap gap-1.5 max-w-xl">
+            <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none py-1 max-w-[200px] sm:max-w-xl">
               {uploadStatus && uploadStatus.state === 'uploading' && (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800 animate-pulse">
                   <Clock className="w-3 h-3 flex-shrink-0 animate-spin text-blue-600 dark:text-blue-400" />

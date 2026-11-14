@@ -1,7 +1,17 @@
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Optional
 from pathlib import Path
+
+if sys.platform == "win32":
+    import asyncio
+    try:
+        if hasattr(asyncio, "WindowsSelectorEventLoopPolicy") and sys.version_info < (3, 14):
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
 from fastapi import FastAPI, HTTPException, Query, Header, Depends, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,10 +39,14 @@ from backend.config import (
     APP_ENV,
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
+    BUILD_VERSION,
+    BEHIND_PROXY,
+    WARMUP_OCR,
 )
 from backend.database import init_db, SessionLocal, Document, get_db
 from backend.auth import seed_default_users, get_user_from_token_str
 from backend.rate_limiter import limiter
+from backend.concurrency import get_active_streams, get_queue_size
 from backend.logger import log_request
 from backend.rag.vector_store import cleanup_orphaned_chunks
 from backend.routers.auth import router as auth_router
@@ -42,13 +56,15 @@ from backend.routers.admin import router as admin_router
 
 
 def warmup_models():
-    """Warm up the embedding model and EasyOCR in background thread (Rule 3)."""
+    """Warm up the embedding model and optional EasyOCR in background thread."""
     try:
         from backend.rag.embeddings import embed_query
         embed_query("warmup query")
-        import easyocr
-        easyocr.Reader(["en"], gpu=False)
-        print("[warmup] Embedding model and EasyOCR warmed up.")
+        print("[warmup] Embedding model warmed up.")
+        if WARMUP_OCR:
+            import easyocr
+            easyocr.Reader(["en"], gpu=False)
+            print("[warmup] EasyOCR warmed up.")
     except Exception as e:
         print(f"[warmup] Background warmup note: {e}")
 
@@ -249,6 +265,7 @@ def get_app_config():
         "company_name": COMPANY_NAME,
         "assistant_intro": "I can answer questions about the company documents you have access to.",
         "demo_mode": DEMO_MODE,
+        "build_version": BUILD_VERSION,
     }
 
 
@@ -271,12 +288,31 @@ def check_system_health():
     llm_configured = bool(GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here")
     is_healthy = (db_status == "ok" and vector_status == "ok")
 
+    # psutil memory check
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        mem_pct = mem.percent
+        memory_info = {
+            "percent": mem_pct,
+            "total_mb": round(mem.total / (1024 * 1024), 1),
+            "available_mb": round(mem.available / (1024 * 1024), 1),
+        }
+        if mem_pct > 85:
+            import logging
+            logging.getLogger("rag_assistant").warning(f"High system memory usage: {mem_pct}%")
+    except Exception:
+        memory_info = {"percent": 0.0, "note": "psutil unavailable"}
+
     return {
         "status": "healthy" if is_healthy else "degraded",
-        "service": f"{COMPANY_NAME} RAG Backend",
+        "service": f"{COMPANY_NAME} RAG Assistant",
         "database": db_status,
         "vector_store": vector_status,
         "llm_configured": llm_configured,
+        "memory": memory_info,
+        "active_streams": get_active_streams(),
+        "queue_size": get_queue_size(),
     }
 
 
@@ -301,5 +337,12 @@ if os.path.exists(FRONTEND_DIST):
             raise HTTPException(status_code=404, detail="Endpoint not found")
         file_path = os.path.join(FRONTEND_DIST, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+            resp = FileResponse(file_path)
+            if full_path.startswith("assets/"):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+        resp = FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp

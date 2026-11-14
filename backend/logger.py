@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -44,11 +45,35 @@ def log_request(
         "duration_ms": round(duration_ms, 2),
         "user_id": user_id,
     }
-    if error:
-        entry["error"] = error
-        logger.error(json.dumps(entry))
+    if error or status_code >= 400:
+        if error:
+            entry["error"] = error
+        if status_code >= 500:
+            logger.error(json.dumps(entry))
+        else:
+            logger.warning(json.dumps(entry))
     else:
         logger.info(json.dumps(entry))
+
+
+def get_last_error_logs(n: int = 20) -> List[str]:
+    """Retrieve last n error or warning lines from app.log with secrets sanitized."""
+    if not LOG_FILE.exists():
+        return []
+    try:
+        lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+        error_lines = [
+            line for line in lines
+            if "[ERROR]" in line or "[WARNING]" in line or '"status": 4' in line or '"status": 5' in line
+        ]
+        selected = error_lines[-n:] if len(error_lines) > n else error_lines
+
+        # Redact any key-like patterns or passwords
+        secret_pattern = re.compile(r"(gsk_[a-zA-Z0-9_\-]+|sk-[a-zA-Z0-9_\-]+|nvapi-[a-zA-Z0-9_\-]+|password[\"':\s]+[^,}\s]+)", re.IGNORECASE)
+        sanitized = [secret_pattern.sub("[REDACTED]", s) for s in selected]
+        return sanitized
+    except Exception as e:
+        return [f"Could not read error logs: {e}"]
 
 
 def log_llm_event(

@@ -501,6 +501,29 @@ class SmokeTestRunner:
         except Exception as e:
             self.log_result("Login Rate Limiter", False, f"Exception: {e}")
 
+    def test_diagnostics(self):
+        try:
+            # 1. Admin diagnostics access -> 200
+            res = self.admin_session.get(f"{self.base_url}/api/admin/diagnostics", timeout=10)
+            if res.status_code != 200:
+                self.log_result("Admin Diagnostics", False, f"Expected 200, got {res.status_code}")
+                return
+            diag = res.json()
+            has_version = "build_version" in diag
+            has_memory = "memory" in diag
+            has_counts = "counts" in diag
+
+            # 2. Normal user diagnostics access -> 403
+            user_res = self.user_a_session.get(f"{self.base_url}/api/admin/diagnostics", timeout=10)
+            is_403 = user_res.status_code == 403
+
+            if has_version and has_memory and has_counts and is_403:
+                self.log_result("Admin Diagnostics & RBAC", True, "Admin access (200) with system metrics, user blocked (403)")
+            else:
+                self.log_result("Admin Diagnostics & RBAC", False, f"Metrics: {has_version and has_memory and has_counts}, User 403: {is_403}")
+        except Exception as e:
+            self.log_result("Admin Diagnostics & RBAC", False, f"Exception: {e}")
+
     # =========================================================================
     # Helpers & Cleanup
     # =========================================================================
@@ -559,6 +582,7 @@ class SmokeTestRunner:
         self.test_user_data_isolation()
         self.test_feedback_and_analytics()
         self.test_login_rate_limit()
+        self.test_diagnostics()
 
         self.cleanup()
 
@@ -592,7 +616,7 @@ class SmokeTestRunner:
 
 def main():
     parser = argparse.ArgumentParser(description="Run RAG Assistant smoke tests.")
-    parser.add_argument("--url", default="http://127.0.0.1:8000", help="Base URL of running server")
+    parser.add_argument("--url", default="http://127.0.0.1:8002", help="Base URL of running server")
     args = parser.parse_args()
 
     runner = SmokeTestRunner(base_url=args.url)

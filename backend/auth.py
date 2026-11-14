@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import asyncio
 import jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status, Request
@@ -32,6 +33,14 @@ def get_password_hash(password: str) -> str:
     pw_bytes = password.encode("utf-8")[:72]
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pw_bytes, salt).decode("utf-8")
+
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
+
+
+async def get_password_hash_async(password: str) -> str:
+    return await asyncio.to_thread(get_password_hash, password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

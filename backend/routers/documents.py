@@ -12,6 +12,8 @@ from backend.schemas import DocumentResponse
 from backend.auth import get_current_user, get_user_from_token_str
 from backend.rag.extractors import validate_file, sanitize_filename, extract_document
 from backend.rag.vector_store import ingest_extracted_sections
+from backend.rag.llm import invalidate_query_cache
+from backend.concurrency import HEAVY_TASK_SEMAPHORE
 from backend.rate_limiter import limiter, get_user_id_or_ip
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
@@ -33,22 +35,24 @@ def process_document_background(
         if not doc:
             return
 
-        sections = extract_document(filepath, file_type, doc_id)
-        chunk_count = ingest_extracted_sections(
-            doc_id=doc_id,
-            filename=filename,
-            file_type=file_type,
-            scope=scope,
-            owner_id=owner_id,
-            sections=sections,
-            chat_id=conversation_id,
-            conversation_id=conversation_id,
-        )
+        with HEAVY_TASK_SEMAPHORE:
+            sections = extract_document(filepath, file_type, doc_id)
+            chunk_count = ingest_extracted_sections(
+                doc_id=doc_id,
+                filename=filename,
+                file_type=file_type,
+                scope=scope,
+                owner_id=owner_id,
+                sections=sections,
+                chat_id=conversation_id,
+                conversation_id=conversation_id,
+            )
 
         doc.status = "ready"
         doc.page_count = len(sections)
         doc.chunk_count = chunk_count
         db.commit()
+        invalidate_query_cache()
     except Exception as e:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if doc:

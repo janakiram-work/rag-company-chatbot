@@ -6,15 +6,26 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 import jwt
 
-from backend.config import JWT_SECRET, JWT_ALGORITHM
+from backend.config import JWT_SECRET, JWT_ALGORITHM, BEHIND_PROXY
 
 failed_logins = defaultdict(list)
 LOGIN_LIMIT = 10
 LOGIN_WINDOW_SEC = 60
 
 
+def get_real_client_ip(request: Request) -> str:
+    """Extract real client IP considering proxy headers when BEHIND_PROXY=True."""
+    if BEHIND_PROXY:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+
 def get_login_key(request: Request, email: str) -> str:
-    ip = request.client.host if request.client else "127.0.0.1"
+    ip = get_real_client_ip(request)
     clean_email = email.lower().strip()
     return f"{ip}:{clean_email}"
 
@@ -61,7 +72,7 @@ def get_user_id_or_ip(request: Request) -> str:
         except Exception:
             pass
 
-    return get_remote_address(request)
+    return get_real_client_ip(request)
 
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_real_client_ip)

@@ -25,9 +25,66 @@ export const setStoredUser = (user) => {
   localStorage.setItem('acme_user', JSON.stringify(user));
 };
 
+export function formatError(err) {
+  if (!err) return 'An unexpected error occurred';
+  if (typeof err === 'string') {
+    if (err.includes('[object Object]')) return 'Enter a valid email address';
+    if (
+      err.toLowerCase().includes('failed to fetch') ||
+      err.toLowerCase().includes('networkerror') ||
+      err.toLowerCase().includes('server unreachable')
+    ) {
+      return 'Cannot reach the server';
+    }
+    return err;
+  }
+
+  const raw = err.response?.data?.detail || err.detail || err.message || err;
+
+  if (typeof raw === 'string') {
+    if (
+      raw.toLowerCase().includes('failed to fetch') ||
+      raw.toLowerCase().includes('networkerror') ||
+      raw.toLowerCase().includes('server unreachable')
+    ) {
+      return 'Cannot reach the server';
+    }
+    if (raw.includes('[object Object]')) return 'Enter a valid email address';
+    return raw;
+  }
+
+  if (Array.isArray(raw)) {
+    const messages = raw
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        const field = item.loc ? item.loc[item.loc.length - 1] : '';
+        const msg = item.msg || item.message || '';
+        if (field === 'email') return 'Enter a valid email such as name@company.com';
+        if (field === 'password') return 'Password must be at least 6 characters';
+        return `${field ? field + ': ' : ''}${msg}`;
+      })
+      .filter(Boolean);
+    return messages.join('. ') || 'Validation error';
+  }
+
+  if (typeof raw === 'object') {
+    if (raw.msg) return raw.msg;
+    if (raw.message) return raw.message;
+    if (raw.detail) return formatError(raw.detail);
+    try {
+      return JSON.stringify(raw);
+    } catch {
+      return 'An unexpected error occurred';
+    }
+  }
+
+  return String(raw);
+}
+
 async function request(url, options = {}, isRetry = false) {
   const token = getAuthToken();
   const headers = {
+    'ngrok-skip-browser-warning': '1',
     ...(options.headers || {}),
   };
   if (token) {
@@ -50,7 +107,12 @@ async function request(url, options = {}, isRetry = false) {
       headers,
     });
   } catch (netErr) {
-    throw new Error('Server unreachable');
+    throw new Error('Cannot reach the server');
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    throw new Error('The server returned an unexpected response, please reload');
   }
 
   if (res.status === 401) {
@@ -72,7 +134,10 @@ async function request(url, options = {}, isRetry = false) {
         const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': '1',
+          },
         });
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
@@ -90,13 +155,21 @@ async function request(url, options = {}, isRetry = false) {
     }
 
     removeAuthToken();
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'ngrok-skip-browser-warning': '1' },
+      });
+    } catch {}
+
     if (hadPriorSession) {
       window.dispatchEvent(
         new CustomEvent('auth-expired', {
-          detail: { message: 'Session expired. Please log in again.' },
+          detail: { message: 'Your session ended, please sign in again' },
         })
       );
-      throw new Error('Session expired. Please log in again.');
+      throw new Error('Your session ended, please sign in again');
     } else {
       throw new Error('Unauthorized');
     }
@@ -124,7 +197,6 @@ async function request(url, options = {}, isRetry = false) {
     throw new Error(errorDetail);
   }
 
-  const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     return res.json();
   }
@@ -184,6 +256,7 @@ export const apiUploadDocument = (file, conversationId = null, onUploadProgress 
     xhr.open('POST', `${API_BASE}/documents/upload${query}`);
     xhr.withCredentials = true;
 
+    xhr.setRequestHeader('ngrok-skip-browser-warning', '1');
     const token = getAuthToken();
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -199,6 +272,11 @@ export const apiUploadDocument = (file, conversationId = null, onUploadProgress 
     }
 
     xhr.onload = () => {
+      const cType = xhr.getResponseHeader('content-type') || '';
+      if (cType.includes('text/html')) {
+        reject(new Error('The server returned an unexpected response, please reload'));
+        return;
+      }
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
@@ -216,7 +294,7 @@ export const apiUploadDocument = (file, conversationId = null, onUploadProgress 
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.onerror = () => reject(new Error('Cannot reach the server'));
     xhr.ontimeout = () => reject(new Error('Upload timed out'));
 
     const formData = new FormData();
@@ -231,6 +309,7 @@ export const apiGetUserDocuments = () => request('/documents/user');
 // Admin API
 export const apiGetAdminStats = () => request('/admin/stats');
 export const apiGetAnalytics = () => request('/admin/analytics');
+export const apiGetDiagnostics = () => request('/admin/diagnostics');
 export const apiGetAdminDocuments = () => request('/admin/documents');
 export const apiDeleteAdminDocument = (docId) =>
   request(`/admin/documents/${docId}`, { method: 'DELETE' });
@@ -264,18 +343,27 @@ export async function apiStreamChatMessage(
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '1',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ message, ...extraPayload }),
       signal,
     });
 
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('The server returned an unexpected response, please reload');
+    }
+
     if (res.status === 401 && !isRetry) {
       try {
         const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': '1',
+          },
         });
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
@@ -302,8 +390,21 @@ export async function apiStreamChatMessage(
       }
 
       removeAuthToken();
-      window.dispatchEvent(new Event('auth-expired'));
-      throw new Error('Session expired. Please log in again.');
+      window.dispatchEvent(
+        new CustomEvent('auth-expired', {
+          detail: { message: 'Your session ended, please sign in again' },
+        })
+      );
+      throw new Error('Your session ended, please sign in again');
+    }
+
+    if (res.status === 503) {
+      let errDetail = 'The server is busy processing other requests, please retry in a few seconds.';
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errDetail;
+      } catch {}
+      throw new Error(errDetail);
     }
 
     if (!res.ok) {
@@ -312,7 +413,7 @@ export async function apiStreamChatMessage(
         const errJson = await res.json();
         errorDetail = errJson.detail || errJson.message || errorDetail;
       } catch {
-        errorDetail = await res.text() || errorDetail;
+        errorDetail = (await res.text()) || errorDetail;
       }
       throw new Error(errorDetail);
     }
@@ -331,10 +432,16 @@ export async function apiStreamChatMessage(
 
       for (const block of lines) {
         const line = block.trim();
+        if (line.startsWith(':')) {
+          continue; // SSE heartbeat comment
+        }
         if (line.startsWith('data: ')) {
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'status') {
+            if (data.type === 'error') {
+              onError(data.message || 'Stream error');
+              return;
+            } else if (data.type === 'status') {
               if (onStatus) onStatus(data.message);
             } else if (data.type === 'token') {
               onToken(data.content);
@@ -349,7 +456,7 @@ export async function apiStreamChatMessage(
     }
   } catch (err) {
     if (err.name !== 'AbortError') {
-      onError(err.message || 'Stream connection lost');
+      onError(formatError(err) || 'Stream connection lost');
     }
   }
 }

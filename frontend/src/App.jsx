@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import AdminDashboard from './components/AdminDashboard';
 import FloatingAdminChat from './components/FloatingAdminChat';
+import ErrorBoundary from './components/ErrorBoundary';
 import {
   getAuthToken,
   getStoredUser,
@@ -21,6 +22,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!getAuthToken());
   const [sessionExpiredMsg, setSessionExpiredMsg] = useState('');
   const [currentView, setCurrentView] = useState('chat'); // 'chat' | 'admin'
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Dark Mode State
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -52,18 +54,26 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Check auth session on mount
+  // Check auth session on mount only if token or refresh cookie exists
   useEffect(() => {
-    apiGetMe()
-      .then((user) => {
-        setCurrentUser(user);
-        setIsAuthenticated(true);
-      })
-      .catch(() => {
-        removeAuthToken();
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-      });
+    const hasToken = !!getAuthToken();
+    const hasRefreshCookie = document.cookie.includes('refresh_token');
+
+    if (hasToken || hasRefreshCookie) {
+      apiGetMe()
+        .then((user) => {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+        })
+        .catch(() => {
+          removeAuthToken();
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+        });
+    } else {
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    }
 
     const handleExpired = (e) => {
       setIsAuthenticated(false);
@@ -231,41 +241,50 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-zinc-950">
-      {/* Sidebar Navigation */}
-      <Sidebar
-        conversations={conversations}
-        activeConversationId={activeConversationId}
-        onSelectConversation={selectConversation}
-        onNewChat={handleNewChat}
-        onDeleteConversation={handleDeleteConversation}
-        currentUser={currentUser}
-        currentView={currentView}
-        onSwitchView={setCurrentView}
-        isDarkMode={isDarkMode}
-        onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
-        onLogout={handleLogout}
-      />
+    <ErrorBoundary title="App Error">
+      <div className="flex h-[100dvh] w-screen overflow-hidden bg-white dark:bg-zinc-950">
+        {/* Sidebar Navigation */}
+        <Sidebar
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          onSelectConversation={selectConversation}
+          onNewChat={handleNewChat}
+          onDeleteConversation={handleDeleteConversation}
+          currentUser={currentUser}
+          currentView={currentView}
+          onSwitchView={setCurrentView}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
+          onLogout={handleLogout}
+          isMobileOpen={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        />
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <div className={currentView === 'chat' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
-          <ChatArea
-            conversation={activeConversation}
-            isLoadingConversation={isLoadingConversation}
-            onRefreshConversation={() => activeConversationId && selectConversation(activeConversationId)}
-            onConversationDone={handleConversationDone}
-            onConversationCreated={handleConversationCreated}
-            currentUser={currentUser}
-          />
-        </div>
-        {currentUser?.role === 'admin' && (
-          <div className={currentView === 'admin' ? 'flex-1 flex flex-col h-full overflow-hidden relative' : 'hidden'}>
-            <AdminDashboard onBackToChat={() => setCurrentView('chat')} />
-            <FloatingAdminChat />
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
+          <div className={currentView === 'chat' ? 'flex-1 flex flex-col h-full overflow-hidden' : 'hidden'}>
+            <ErrorBoundary title="Failed to render chat">
+              <ChatArea
+                conversation={activeConversation}
+                isLoadingConversation={isLoadingConversation}
+                onRefreshConversation={() => activeConversationId && selectConversation(activeConversationId)}
+                onConversationDone={handleConversationDone}
+                onConversationCreated={handleConversationCreated}
+                currentUser={currentUser}
+                onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+              />
+            </ErrorBoundary>
           </div>
-        )}
-      </main>
-    </div>
+          {currentUser?.role === 'admin' && (
+            <div className={currentView === 'admin' ? 'flex-1 flex flex-col h-full overflow-hidden relative' : 'hidden'}>
+              <ErrorBoundary title="Failed to render Admin Console">
+                <AdminDashboard onBackToChat={() => setCurrentView('chat')} />
+                <FloatingAdminChat />
+              </ErrorBoundary>
+            </div>
+          )}
+        </main>
+      </div>
+    </ErrorBoundary>
   );
 }

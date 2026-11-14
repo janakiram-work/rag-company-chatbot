@@ -43,6 +43,8 @@ uploads/
 chroma_data/
 node_modules/
 old_project/
+data/.jwt_secret
+data/
 
 # Frontend distribution (must be tracked for production deployment without requiring node)
 !frontend/dist/

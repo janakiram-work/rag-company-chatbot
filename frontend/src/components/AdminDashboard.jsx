@@ -20,6 +20,8 @@ import {
   BarChart2,
   HelpCircle,
   Activity,
+  Cpu,
+  Terminal,
 } from 'lucide-react';
 import {
   apiGetAdminStats,
@@ -30,14 +32,17 @@ import {
   apiUploadDocument,
   apiGetDocumentStatus,
   apiGetAnalytics,
+  apiGetDiagnostics,
 } from '../api';
+import ErrorBoundary from './ErrorBoundary';
 
 export default function AdminDashboard({ onBackToChat }) {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'docs' | 'users' | 'history'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'docs' | 'users' | 'history' | 'analytics' | 'diagnostics'
   const [stats, setStats] = useState(null);
   const [companyDocs, setCompanyDocs] = useState([]);
   const [users, setUsers] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [diagnostics, setDiagnostics] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Upload state
@@ -52,7 +57,7 @@ export default function AdminDashboard({ onBackToChat }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [statsData, docsData, usersData, analyticsData] = await Promise.all([
+      const [statsData, docsData, usersData, analyticsData, diagData] = await Promise.all([
         apiGetAdminStats(),
         apiGetAdminDocuments(),
         apiGetAdminUsers(),
@@ -60,11 +65,16 @@ export default function AdminDashboard({ onBackToChat }) {
           console.error('Failed to load analytics:', err);
           return null;
         }),
+        apiGetDiagnostics().catch((err) => {
+          console.error('Failed to load diagnostics:', err);
+          return null;
+        }),
       ]);
       setStats(statsData);
       setCompanyDocs(docsData);
       setUsers(usersData);
       if (analyticsData) setAnalytics(analyticsData);
+      if (diagData) setDiagnostics(diagData);
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
@@ -223,6 +233,18 @@ export default function AdminDashboard({ onBackToChat }) {
           >
             <BarChart2 className="w-3.5 h-3.5 text-emerald-500" />
             Analytics
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('diagnostics')}
+            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+              activeTab === 'diagnostics'
+                ? 'bg-white dark:bg-zinc-900 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-800 dark:hover:text-zinc-200'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-blue-500" />
+            Diagnostics
           </button>
           <button
             type="button"
@@ -852,6 +874,87 @@ export default function AdminDashboard({ onBackToChat }) {
               )}
             </div>
           </div>
+        )}
+
+        {/* Diagnostics Tab */}
+        {activeTab === 'diagnostics' && (
+          <ErrorBoundary title="Failed to load diagnostics">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Build Version</span>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
+                    v{diagnostics?.build_version || '1.0.0'}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Server time: {diagnostics?.server_time ? new Date(diagnostics.server_time).toLocaleString() : 'N/A'}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">System Memory</span>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
+                    {diagnostics?.memory?.percent ?? 0}%
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Used: {diagnostics?.memory?.used_mb ?? 0} MB / {diagnostics?.memory?.total_mb ?? 0} MB
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Active Streams & DB Repairs</span>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
+                    {diagnostics?.active_streams ?? 0} active
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Normalized records: {diagnostics?.rows_normalized_count ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Database Counts */}
+              <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Database Statistics</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                  <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
+                    <span className="text-xs text-gray-400">Users</span>
+                    <div className="text-xl font-bold text-gray-900 dark:text-white mt-1">{diagnostics?.counts?.users ?? 0}</div>
+                  </div>
+                  <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
+                    <span className="text-xs text-gray-400">Documents</span>
+                    <div className="text-xl font-bold text-gray-900 dark:text-white mt-1">{diagnostics?.counts?.documents ?? 0}</div>
+                  </div>
+                  <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
+                    <span className="text-xs text-gray-400">Conversations</span>
+                    <div className="text-xl font-bold text-gray-900 dark:text-white mt-1">{diagnostics?.counts?.conversations ?? 0}</div>
+                  </div>
+                  <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
+                    <span className="text-xs text-gray-400">Messages</span>
+                    <div className="text-xl font-bold text-gray-900 dark:text-white mt-1">{diagnostics?.counts?.messages ?? 0}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Error Logs */}
+              <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-800 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-amber-500" />
+                  Recent Errors & Warnings (Sanitized)
+                </h3>
+                <div className="bg-zinc-950 text-zinc-200 font-mono text-xs p-4 rounded-xl max-h-64 overflow-y-auto space-y-1">
+                  {diagnostics?.error_logs && diagnostics.error_logs.length > 0 ? (
+                    diagnostics.error_logs.map((log, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap break-all text-amber-300/90 font-mono text-[11px] leading-tight">
+                        {log}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-zinc-500 italic">No recent error or warning logs recorded.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </ErrorBoundary>
         )}
       </div>
     </div>
