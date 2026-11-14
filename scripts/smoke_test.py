@@ -12,6 +12,12 @@ import argparse
 from pathlib import Path
 from io import BytesIO
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import requests
 from PIL import Image
 import fitz  # PyMuPDF
