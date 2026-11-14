@@ -234,6 +234,10 @@ def run_load_test(base_url: str = DEFAULT_BASE_URL, num_users: int = 8):
     print(f"Time-to-First-Token p95: {p95_ttft:.1f} ms")
     print(f"Server Memory After:     {mem_after.get('percent', 0)}% (Used: {mem_after.get('used_mb', 0)} MB)")
     print(f"Active Chat Streams:     {health_after.get('active_streams', 0)}")
+    if all_errors:
+        print("\nErrors encountered:")
+        for err in all_errors[:10]:
+            print(f"  - {err}")
     print("=" * 80)
 
     return total_success > 0 and len(all_errors) == 0
