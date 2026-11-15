@@ -20,6 +20,7 @@ import {
   apiUploadDocument,
   apiGetDocumentStatus,
   getAuthToken,
+  buildFileUrl,
 } from '../api';
 
 export default function FloatingAdminChat() {
@@ -41,7 +42,7 @@ export default function FloatingAdminChat() {
 
   const buildImageUrl = (url) => {
     if (!url) return '';
-    return url;
+    return buildFileUrl(url);
   };
 
   // Rule 4: New Chat in FloatingAdminChat immediately resets state without API call

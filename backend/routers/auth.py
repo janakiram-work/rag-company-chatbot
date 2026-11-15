@@ -2,7 +2,7 @@ import secrets
 import hashlib
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
@@ -71,14 +71,21 @@ def should_use_secure_cookie(request: Optional[Request] = None) -> bool:
     return False
 
 
+def get_cookie_security_params(request: Optional[Request] = None) -> Tuple[str, bool]:
+    from backend.config import CROSS_SITE_COOKIES
+    if CROSS_SITE_COOKIES:
+        return "none", True
+    return "lax", should_use_secure_cookie(request)
+
+
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str, request: Optional[Request] = None):
-    sec = should_use_secure_cookie(request)
+    samesite, sec = get_cookie_security_params(request)
     response.set_cookie(
         key="access_token",
         value=access_token,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
-        samesite="lax",
+        samesite=samesite,
         secure=sec,
         path="/",
     )
@@ -87,7 +94,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str, 
         value=refresh_token,
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         httponly=True,
-        samesite="lax",
+        samesite=samesite,
         secure=sec,
         path="/",
     )
@@ -410,13 +417,14 @@ def refresh_token(
         )
 
     new_access = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role, "token_version": user.token_version})
+    samesite, sec = get_cookie_security_params(request)
     response.set_cookie(
         key="access_token",
         value=new_access,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
-        samesite="lax",
-        secure=should_use_secure_cookie(request),
+        samesite=samesite,
+        secure=sec,
         path="/",
     )
 
@@ -429,9 +437,10 @@ def refresh_token(
 
 
 @router.post("/logout")
-def logout_user(response: Response):
-    response.delete_cookie(key="access_token", path="/")
-    response.delete_cookie(key="refresh_token", path="/")
+def logout_user(request: Request, response: Response):
+    samesite, sec = get_cookie_security_params(request)
+    response.delete_cookie(key="access_token", path="/", samesite=samesite, secure=sec)
+    response.delete_cookie(key="refresh_token", path="/", samesite=samesite, secure=sec)
     return {"status": "success", "message": "Logged out successfully"}
 
 

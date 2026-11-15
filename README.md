@@ -135,7 +135,8 @@ All settings are managed via `.env`. A complete configuration template is availa
 | `COOKIE_SECURE` | `false` | Yes | Set `true` ONLY behind HTTPS. Setting `true` on HTTP causes a browser login redirect loop. |
 | `BEHIND_PROXY` | `false` | No | Trust reverse proxy headers (`X-Forwarded-Proto`, `X-Forwarded-For`). |
 | `PUBLIC_URL` | `""` | No | Publicly accessible root URL (e.g. `https://chat.example.com`). |
-| `ALLOWED_ORIGINS`| `http://127.0.0.1:8000,...` | No | Comma-separated CORS allowed origin URLs. |
+| `ALLOWED_ORIGINS`| `""` | No | Comma-separated exact CORS allowed origins (no wildcards, no trailing slashes). |
+| `CROSS_SITE_COOKIES` | `false` | No | When `true`, sets `SameSite=None` + `Secure=true` and requires valid `Origin` on state-changing requests. |
 | `BUILD_VERSION` | `1.0.0` | No | Deployment release version string. |
 | `COMPANY_NAME` | `Company Assistant` | No | Default company name shown in header and titles. |
 
@@ -250,7 +251,53 @@ python scripts/prune_users.py --keep admin@example.com user@example.com --apply
 
 For detailed systemd service files, Nginx reverse proxy configurations, and automated backup scripts, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-### Essential Deployment Rules
+### 7.1 Deployment Topologies: Same-Origin vs. Cross-Origin Mode
+
+The application supports two deployment topologies:
+
+#### Mode A: Same-Origin Deployment (Recommended for Real Users)
+In same-origin mode, the frontend and backend share the identical scheme and hostname (typically via an Nginx/Caddy reverse proxy routing `/` to the frontend static files and `/api` to Uvicorn, or with FastAPI serving the static bundle directly).
+
+* **Backend `.env`**:
+  ```ini
+  ALLOWED_ORIGINS=
+  CROSS_SITE_COOKIES=false
+  COOKIE_SECURE=true      # true behind HTTPS, false for local HTTP dev
+  BEHIND_PROXY=true       # true when behind Nginx
+  ```
+* **Frontend `.env` (build-time)**:
+  ```ini
+  VITE_API_BASE_URL=      # empty string (uses relative /api paths)
+  ```
+
+#### Mode B: Cross-Origin Deployment (Optional, e.g. Frontend on Vercel, Backend behind Ngrok/Render)
+In cross-origin mode, the frontend is hosted on a different domain (e.g., `https://frontend.vercel.app`) and communicates with a backend hosted on another domain (e.g., `https://backend.ngrok-free.app`).
+
+* **Backend `.env`**:
+  ```ini
+  ALLOWED_ORIGINS=https://frontend.vercel.app
+  CROSS_SITE_COOKIES=true
+  COOKIE_SECURE=true
+  ```
+* **Frontend `.env` (build-time)**:
+  ```ini
+  VITE_API_BASE_URL=https://backend.ngrok-free.app
+  ```
+
+> [!WARNING]
+> **Third-Party Cookie Blocking in Cross-Origin Mode**
+> Modern web browsers enforce strict third-party cookie restrictions. When the frontend and backend reside on different origins, cookies set by the backend are treated as third-party cookies and blocked on multiple platforms:
+
+| Browser / Environment | Third-Party Cookie Policy | Cross-Origin Mode Behavior | Same-Origin Mode Behavior |
+|---|---|---|---|
+| **Apple Safari (macOS)** | Blocked by default via Intelligent Tracking Prevention (ITP) | Authentication cookies rejected; login fails | **Fully functional** |
+| **iOS / iPadOS (All Browsers)** | Blocked by default (WebKit engine policy) | Authentication cookies rejected; login fails | **Fully functional** |
+| **Google Chrome / Microsoft Edge** | Blocked in Incognito; phased rollout of 3PC restrictions | Authentication cookies rejected; login fails | **Fully functional** |
+| **Mozilla Firefox** | Blocked by default via Total Cookie Protection | Partitioned / rejected; session persistence fails | **Fully functional** |
+
+**Recommendation for Production:** Always deploy under a **same-origin topology** (or a shared root domain with reverse proxy) for real users and production environments to guarantee seamless cookie-based authentication across all browsers and devices without third-party cookie blocking issues.
+
+### 7.2 Essential Deployment Rules
 
 1. **Single Worker Process**: Run Uvicorn with `workers=1`. In-process pub/sub (`/api/events`) and chat concurrency control require a single worker.
 2. **Reverse Proxy Buffering**: Nginx must disable proxy buffering for SSE routes (`/api/chat/messages` and `/api/events`):

@@ -7,6 +7,7 @@ import {
   setAuthToken,
   setStoredUser,
   formatError,
+  buildApiUrl,
 } from '../api';
 import {
   ShieldCheck,
@@ -71,7 +72,10 @@ export default function LoginPage({ onLoginSuccess, initialError = '' }) {
   }, []);
 
   useEffect(() => {
-    fetch('/api/config')
+    fetch(buildApiUrl('/config'), {
+      credentials: 'include',
+      headers: { 'ngrok-skip-browser-warning': '1' },
+    })
       .then((res) => res.json())
       .then((cfg) => {
         if (cfg) {

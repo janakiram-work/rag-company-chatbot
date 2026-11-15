@@ -1,4 +1,41 @@
-const API_BASE = '/api';
+export const getApiBaseUrl = (customBase = null) => {
+  if (customBase !== null && customBase !== undefined) {
+    return String(customBase).trim().replace(/\/+$/, '');
+  }
+  const envUrl =
+    (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE_URL) ||
+    (typeof import.meta !== 'undefined' && import.meta?.env && import.meta.env.VITE_API_BASE_URL) ||
+    '';
+  return envUrl.trim().replace(/\/+$/, '');
+};
+
+export const buildApiUrl = (endpoint = '', customBase = null) => {
+  const base = getApiBaseUrl(customBase);
+  let clean = endpoint ? (endpoint.startsWith('/') ? endpoint : `/${endpoint}`) : '';
+  if (clean && !clean.startsWith('/api')) {
+    clean = `/api${clean}`;
+  } else if (!clean) {
+    clean = '/api';
+  }
+  return base ? `${base}${clean}` : clean;
+};
+
+export const buildFileUrl = (url = '', customBase = null) => {
+  if (!url) return '';
+  if (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('blob:') ||
+    url.startsWith('data:')
+  ) {
+    return url;
+  }
+  const base = getApiBaseUrl(customBase);
+  const clean = url.startsWith('/') ? url : `/${url}`;
+  return base ? `${base}${clean}` : clean;
+};
+
+const API_BASE = buildApiUrl('');
 
 export const getAuthToken = () => localStorage.getItem('app_token') || localStorage.getItem('acme_token');
 export const setAuthToken = (token) => {

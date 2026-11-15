@@ -32,6 +32,7 @@ from backend.config import (
     LOG_DIR,
     COMPANY_NAME,
     ALLOWED_ORIGINS,
+    CROSS_SITE_COOKIES,
     JWT_SECRET,
     JWT_ALGORITHM,
     DEMO_MODE,
@@ -205,13 +206,50 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+class DynamicCORSMiddleware(CORSMiddleware):
+    def is_allowed_origin(self, origin: str) -> bool:
+        import backend.config as cfg
+        norm = origin.strip().rstrip("/")
+        return bool(norm and norm in cfg.ALLOWED_ORIGINS)
+
+
+# CSRF Protection for Cross-Site Cookies
+@app.middleware("http")
+async def csrf_origin_middleware(request: Request, call_next):
+    import backend.config as cfg
+    if cfg.CROSS_SITE_COOKIES and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin", "").strip().rstrip("/")
+        if not origin or origin not in cfg.ALLOWED_ORIGINS:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF check failed: invalid or missing Origin header for cross-site state-changing request"},
+            )
+    return await call_next(request)
+
+
 # CORS Middleware
 app.add_middleware(
-    CORSMiddleware,
+    DynamicCORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "ngrok-skip-browser-warning",
+        "X-Request-ID",
+        "X-Chat-ID",
+        "X-Session-ID",
+        "X-Conversation-ID",
+        "Accept",
+        "Origin",
+    ],
+    expose_headers=[
+        "Content-Type",
+        "Content-Disposition",
+        "X-Request-ID",
+        "Retry-After",
+    ],
 )
 
 # Mount Routers

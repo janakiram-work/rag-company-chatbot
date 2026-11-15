@@ -31,6 +31,7 @@ import {
   apiCreateConversation,
   apiSubmitFeedback,
   getAuthToken,
+  buildFileUrl,
 } from '../api';
 
 export default function ChatArea({
@@ -78,7 +79,7 @@ export default function ChatArea({
 
   const buildImageUrl = (url) => {
     if (!url) return '';
-    return url;
+    return buildFileUrl(url);
   };
 
   const abortControllerRef = useRef(null);
@@ -444,7 +445,8 @@ export default function ChatArea({
 
   // Open PDF at specific page
   const handleOpenPdfPage = (docId, page) => {
-    const url = `/api/documents/${docId}/file#page=${page || 1}`;
+    const rawUrl = `/api/documents/${docId}/file#page=${page || 1}`;
+    const url = buildFileUrl(rawUrl);
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 

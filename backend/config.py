@@ -110,11 +110,22 @@ DEMO_ADMIN_EMAIL = os.getenv("DEMO_ADMIN_EMAIL", "").strip()
 DEMO_ADMIN_PASSWORD = os.getenv("DEMO_ADMIN_PASSWORD", "").strip()
 DEMO_USER_EMAIL = os.getenv("DEMO_USER_EMAIL", "").strip()
 DEMO_USER_PASSWORD = os.getenv("DEMO_USER_PASSWORD", "").strip()
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001,https://chat.yourcompany.com").split(",")
-    if origin.strip()
-]
+def parse_allowed_origins(raw: str) -> list:
+    origins = []
+    for entry in (raw or "").split(","):
+        cleaned = entry.strip()
+        if not cleaned:
+            continue
+        if "*" in cleaned:
+            continue
+        cleaned = cleaned.rstrip("/")
+        if cleaned and cleaned not in origins:
+            origins.append(cleaned)
+    return origins
+
+
+ALLOWED_ORIGINS = parse_allowed_origins(os.getenv("ALLOWED_ORIGINS", ""))
+CROSS_SITE_COOKIES = os.getenv("CROSS_SITE_COOKIES", "false").lower() in ("true", "1", "yes")
 
 # Embedding & Retrieval
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-en-v1.5")

@@ -18,6 +18,7 @@ import {
   apiCreateConversation,
   apiGetConversation,
   apiDeleteConversation,
+  buildApiUrl,
 } from './api';
 
 export default function App() {
@@ -64,7 +65,10 @@ export default function App() {
 
   // Fetch /api/config for live branding before render
   useEffect(() => {
-    fetch('/api/config')
+    fetch(buildApiUrl('/config'), {
+      credentials: 'include',
+      headers: { 'ngrok-skip-browser-warning': '1' },
+    })
       .then((res) => res.json())
       .then((cfg) => {
         if (cfg && cfg.branding) {
@@ -141,7 +145,7 @@ export default function App() {
     const connectSSE = () => {
       if (isCleanedUp) return;
       try {
-        es = new EventSource('/api/events', { withCredentials: true });
+        es = new EventSource(buildApiUrl('/events'), { withCredentials: true });
 
         es.onopen = () => {
           retryDelay = 2000;
