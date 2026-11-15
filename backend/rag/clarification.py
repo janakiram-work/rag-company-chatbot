@@ -51,7 +51,7 @@ def check_clarification_needed(
     if intent in ("CHAT", "CONVERSATION"):
         return None
 
-    # Never ask when there is zero attached (unless finding an image)
+    # Never ask when there is zero attached (unless finding an image or showing images across company docs)
     if not attached_docs:
         if intent == "FIND_IMAGE":
             return {
@@ -60,6 +60,31 @@ def check_clarification_needed(
                 "clarification_type": "upload_image",
                 "original_message": original_message,
             }
+        if intent == "SHOW_IMAGES" and db is not None:
+            from backend.database import ImageAsset, ImageHash
+            company_docs = (
+                db.query(Document)
+                .filter(Document.scope == "company", Document.status == "ready")
+                .all()
+            )
+            docs_with_imgs = []
+            for d in company_docs:
+                if d.file_type in ("png", "jpg", "jpeg"):
+                    docs_with_imgs.append(d)
+                elif d.file_type == "pdf":
+                    has_assets = db.query(ImageAsset).filter(ImageAsset.doc_id == d.id).first()
+                    has_hashes = db.query(ImageHash).filter(ImageHash.doc_id == d.id).first()
+                    if has_assets or has_hashes:
+                        docs_with_imgs.append(d)
+            if len(docs_with_imgs) >= 2:
+                options = [{"label": d.filename, "value": str(d.id)} for d in docs_with_imgs]
+                options.append({"label": "All files", "value": "all"})
+                return {
+                    "question": "Which document's images would you like to see?",
+                    "options": options,
+                    "clarification_type": "select_document_images",
+                    "original_message": original_message,
+                }
         return None
 
     attached_pdfs = [d for d in attached_docs if d.file_type == "pdf"]
@@ -67,7 +92,7 @@ def check_clarification_needed(
     has_specific_file = bool(params.get("file_reference") and params["file_reference"].get("id"))
 
     # If user already selected a default file in this conversation, and no specific reference overrides it
-    if conversation.default_doc_id and not has_specific_file:
+    if conversation.default_doc_id and not has_specific_file and intent not in ("SHOW_IMAGES", "FIND_IMAGE", "DESCRIBE_IMAGE"):
         default_exists = any(str(d.id) == str(conversation.default_doc_id) for d in attached_docs)
         if default_exists:
             params["file_reference"] = {"id": str(conversation.default_doc_id), "type": "default"}
@@ -85,7 +110,7 @@ def check_clarification_needed(
 
     # Rule 4: FIND_IMAGE or 'this picture' with 2+ attached images and no clear reference
     if (intent == "FIND_IMAGE" or params.get("deictic")) and len(attached_images) >= 2:
-        if not params.get("ordinal") and not has_specific_file:
+        if not params.get("ordinal") and not has_specific_file and not params.get("is_comparison") and not params.get("target_feature"):
             options = [{"label": img.filename, "value": str(img.id)} for img in attached_images]
             return {
                 "question": "Which image should I search for?",
@@ -114,12 +139,15 @@ def check_clarification_needed(
             "original_message": original_message,
         }
 
-    # Rule 1: SHOW_IMAGES with 2+ attached files and no file given
+    # Rule 1: SHOW_IMAGES with 2+ attached files
     if intent == "SHOW_IMAGES" and len(attached_docs) >= 2:
-        # If user explicitly asked for 'all' (e.g. 'show uploaded pictures', 'all images'), do not clarify
-        if params.get("all"):
+        # If all attached docs are standalone image documents, never clarify: show all directly!
+        if all(d.file_type in ("png", "jpg", "jpeg") for d in attached_docs):
             return None
-        if not has_specific_file:
+        # If user explicitly asked for 'all' or plural images/pictures, do not clarify
+        if params.get("all") or re.search(r"\b(images|pictures|photos|all)\b", original_message.lower()):
+            return None
+        if not has_specific_file and not params.get("ordinal"):
             options = [{"label": d.filename, "value": str(d.id)} for d in attached_docs]
             options.append({"label": "All files", "value": "all"})
             return {

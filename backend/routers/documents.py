@@ -309,10 +309,18 @@ def list_user_documents(
 
         return [DocumentResponse.model_validate(d) for d in docs]
 
-    docs = (
-        db.query(Document)
-        .filter(Document.owner_id == current_user.id, Document.scope == "user")
-        .order_by(Document.uploaded_at.desc())
-        .all()
-    )
+    if current_user.role == "admin":
+        docs = (
+            db.query(Document)
+            .filter((Document.owner_id == current_user.id) | (Document.scope == "company"))
+            .order_by(Document.uploaded_at.desc())
+            .all()
+        )
+    else:
+        docs = (
+            db.query(Document)
+            .filter(Document.owner_id == current_user.id, Document.scope == "user")
+            .order_by(Document.uploaded_at.desc())
+            .all()
+        )
     return [DocumentResponse.model_validate(d) for d in docs]

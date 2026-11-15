@@ -1,3 +1,5 @@
+from backend.user_cleanup import resolve_file_location
+import os
 import json
 import time
 import asyncio
@@ -7,7 +9,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from groq import Groq
 
-from backend.database import get_db, Conversation, Message, Document, User, Feedback, ConversationDocument, utcnow
+from backend.database import get_db, Conversation, Message, Document, User, Feedback, ConversationDocument, ImageAsset, ImageHash, utcnow
 from backend.concurrency import try_acquire_chat_slot, release_chat_slot, HEAVY_TASK_SEMAPHORE
 from backend.schemas import (
     ConversationResponse,
@@ -18,7 +20,7 @@ from backend.schemas import (
     AttachedDocumentItem,
 )
 from backend.auth import get_current_user
-from backend.config import GROQ_API_KEY, GROQ_FAST_MODEL, GROQ_MODEL
+from backend.config import GROQ_API_KEY, GROQ_FAST_MODEL, GROQ_MODEL, UPLOAD_DIR
 from backend.rag.query_rewriter import (
     rewrite_query_if_needed,
     classify_intent,
@@ -34,9 +36,9 @@ from backend.rag.llm import (
     stream_visual_answer,
     NOT_FOUND_MESSAGE,
 )
-from backend.rag.image_matcher import find_matching_images
+from backend.rag.image_matcher import find_matching_images, compute_image_phash
 from backend.rate_limiter import limiter, get_user_id_or_ip
-from backend.logger import log_llm_event, log_chat_intent
+from backend.logger import logger, log_llm_event, log_chat_intent
 from backend.rag.planner import plan
 from backend.rag.clarification import check_clarification_needed, try_resolve_clarification
 from backend.rag.image_tools import handle_show_images
@@ -578,6 +580,7 @@ async def send_chat_message_stream(
                     break
 
         async def producer_worker():
+            nonlocal query
             try:
                 t_start = time.perf_counter()
                 t_first_token = None
@@ -616,10 +619,11 @@ async def send_chat_message_stream(
                             conv.pending_clarification = None
                             if not resolved_choice.get("is_all"):
                                 conv.default_doc_id = resolved_choice["value"]
-                                conv.active_doc_id = resolved_choice["value"]
+                                # Do NOT set conv.active_doc_id: chosen chip must not persist to later questions
                             db.commit()
 
                             orig_msg = pending_state.get("original_message", query)
+                            query = orig_msg  # Answer the original question!
                             plan_res = await asyncio.to_thread(plan, orig_msg, {"attached_docs": attached_docs_list})
                             if resolved_choice.get("is_all"):
                                 plan_res["params"]["all"] = True
@@ -645,6 +649,27 @@ async def send_chat_message_stream(
 
                 intent = plan_res["intent"]
                 params = plan_res["params"]
+
+                # Handle follow-up queries like "the other one" or "what about the other"
+                if params.get("is_other") or "the other one" in query.lower() or "what about the other" in query.lower():
+                    last_asst_msg = (
+                        db.query(Message)
+                        .filter(Message.conversation_id == conv.id, Message.sender == "assistant")
+                        .order_by(Message.created_at.desc())
+                        .first()
+                    )
+                    last_shown_filenames = []
+                    if last_asst_msg and last_asst_msg.images_json:
+                        try:
+                            last_imgs = json.loads(last_asst_msg.images_json)
+                            last_shown_filenames = [img.get("filename") for img in last_imgs if img.get("filename")]
+                        except Exception:
+                            pass
+                    other_docs = [d for d in attached_docs_list if d.filename not in last_shown_filenames]
+                    if other_docs:
+                        chosen_other = other_docs[0]
+                        params["file_reference"] = {"id": str(chosen_other.id), "filename": chosen_other.filename, "type": "exact"}
+                        intent = "SHOW_IMAGES"
 
                 # 2. Check if clarification is needed (only if not just resolved)
                 clarification = None
@@ -700,6 +725,83 @@ async def send_chat_message_stream(
                         rewritten_query=query,
                         intent="SHOW_IMAGES",
                     )
+
+                elif intent == "IMAGE_COUNT" or params.get("is_count"):
+                    count = len(attached_img_docs)
+                    if count > 0:
+                        names = ", ".join(d.filename for d in attached_img_docs)
+                        text = f"There are {count} images attached to this conversation: {names}."
+                    else:
+                        text = "There are no images attached to this conversation."
+                    await send_event(f"data: {json.dumps({'type': 'token', 'content': text})}\n\n")
+                    full_content_chunks.append(text)
+                    final_sources = []
+                    final_images = []
+
+                elif intent == "FIND_IMAGE" and not params.get("compare_pair") and (params.get("is_comparison") or "same" in query.lower() or "compare" in query.lower()):
+                    await send_event(f"data: {json.dumps({'type': 'status', 'message': 'Matching image...'})}\n\n")
+                    if len(attached_img_docs) >= 2:
+                        doc_a = attached_img_docs[0]
+                        doc_b = attached_img_docs[1]
+                        path_a = resolve_file_location(str(doc_a.id), doc_a.filename, doc_a.filepath, UPLOAD_DIR)
+                        path_b = resolve_file_location(str(doc_b.id), doc_b.filename, doc_b.filepath, UPLOAD_DIR)
+                        h_a = compute_image_phash(path_a) if path_a and os.path.exists(path_a) else None
+                        h_b = compute_image_phash(path_b) if path_b and os.path.exists(path_b) else None
+                        diff = 99
+                        if h_a is not None and h_b is not None:
+                            try:
+                                val_a = int(str(h_a), 16) if isinstance(h_a, str) else int(h_a)
+                                val_b = int(str(h_b), 16) if isinstance(h_b, str) else int(h_b)
+                                diff = bin(val_a ^ val_b).count("1")
+                            except Exception:
+                                diff = 99 if str(h_a) != str(h_b) else 0
+                        if diff <= 5:
+                            text = f"The images ({doc_a.filename} and {doc_b.filename}) are identical."
+                        else:
+                            text = f"The images ({doc_a.filename} and {doc_b.filename}) are different."
+                    elif len(attached_img_docs) == 1:
+                        text = "I see only one image, please upload the second."
+                    else:
+                        text = "Please upload the images you want to compare."
+                    await send_event(f"data: {json.dumps({'type': 'token', 'content': text})}\n\n")
+                    full_content_chunks.append(text)
+                    final_images = []
+
+                elif intent == "FIND_IMAGE" and params.get("target_feature"):
+                    feat = params["target_feature"].lower()
+                    matched_doc = None
+                    for d in attached_img_docs:
+                        doc_assets = db.query(ImageAsset).filter(ImageAsset.doc_id == d.id).all()
+                        ocr_text = " ".join((a.ocr_text or "") + " " + (a.caption or "") for a in doc_assets).lower()
+                        if feat in d.filename.lower() or feat in ocr_text:
+                            matched_doc = d
+                            break
+                    if not matched_doc and attached_img_docs:
+                        for d in attached_img_docs:
+                            path_d = resolve_file_location(str(d.id), d.filename, d.filepath, UPLOAD_DIR)
+                            if path_d and os.path.exists(path_d):
+                                try:
+                                    desc_info, _ = describe_image(image_doc=d, user=current_user)
+                                    if feat in (desc_info or "").lower():
+                                        matched_doc = d
+                                        break
+                                except Exception:
+                                    pass
+                    if matched_doc:
+                        text = f"{matched_doc.filename} has the {feat}."
+                        from backend.rag.image_index import to_web_image_url
+                        final_images = [{
+                            "url": to_web_image_url(resolve_file_location(str(matched_doc.id), matched_doc.filename, matched_doc.filepath, UPLOAD_DIR) or matched_doc.filepath),
+                            "filename": matched_doc.filename,
+                            "page": 1,
+                            "location_label": "page 1",
+                            "caption": f"{matched_doc.filename} with {feat}",
+                            "kind": "embedded",
+                        }]
+                    else:
+                        text = f"I couldn't find an image with {feat} in the attached documents."
+                    await send_event(f"data: {json.dumps({'type': 'token', 'content': text})}\n\n")
+                    full_content_chunks.append(text)
 
                 elif intent == "FIND_IMAGE":
                     target_img_doc = None
@@ -761,38 +863,50 @@ async def send_chat_message_stream(
                         await send_event(f"data: {json.dumps({'type': 'token', 'content': not_matched_text})}\n\n")
 
                 elif intent == "DESCRIBE_IMAGE":
-                    target_img_doc = None
-                    ordinal = params.get("ordinal")
-                    if ordinal and 1 <= ordinal <= len(attached_img_docs):
-                        target_img_doc = attached_img_docs[ordinal - 1]
-                    elif attached_img_docs:
-                        target_img_doc = attached_img_docs[-1]
+                    if ("both" in query.lower() or params.get("all")) and len(attached_img_docs) >= 2:
+                        descs = []
+                        final_images = []
+                        for d in attached_img_docs:
+                            desc_text, desc_imgs = await asyncio.to_thread(describe_image, image_doc=d, user=current_user)
+                            descs.append(f"{d.filename}: {desc_text}")
+                            if desc_imgs:
+                                final_images.extend(desc_imgs)
+                        combined_text = "\n\n".join(descs)
+                        full_content_chunks.append(combined_text)
+                        await send_event(f"data: {json.dumps({'type': 'token', 'content': combined_text})}\n\n")
                     else:
                         target_img_doc = None
+                        ordinal = params.get("ordinal")
+                        if ordinal and 1 <= ordinal <= len(attached_img_docs):
+                            target_img_doc = attached_img_docs[ordinal - 1]
+                        elif attached_img_docs:
+                            target_img_doc = attached_img_docs[-1]
+                        else:
+                            target_img_doc = None
 
-                    if target_img_doc:
-                        await send_event(f"data: {json.dumps({'type': 'status', 'message': 'Analyzing image content...'})}\n\n")
-                        desc_text, desc_images = await asyncio.to_thread(
-                            describe_image,
-                            image_doc=target_img_doc,
-                            user=current_user,
-                        )
-                        final_images = desc_images
-                        full_content_chunks.append(desc_text)
-                        await send_event(f"data: {json.dumps({'type': 'token', 'content': desc_text})}\n\n")
-                        log_chat_intent(
-                            req_id=request.headers.get("X-Request-ID"),
-                            visual_intent=True,
-                            scope="image_description",
-                            attached_doc_ids=conv_attached_ids,
-                            images_found=len(desc_images),
-                            rewritten_query=query,
-                            intent="DESCRIBE_IMAGE",
-                        )
-                    else:
-                        no_img_msg = "Please attach or upload an image to describe."
-                        full_content_chunks.append(no_img_msg)
-                        await send_event(f"data: {json.dumps({'type': 'token', 'content': no_img_msg})}\n\n")
+                        if target_img_doc:
+                            await send_event(f"data: {json.dumps({'type': 'status', 'message': 'Analyzing image content...'})}\n\n")
+                            desc_text, desc_images = await asyncio.to_thread(
+                                describe_image,
+                                image_doc=target_img_doc,
+                                user=current_user,
+                            )
+                            final_images = desc_images
+                            full_content_chunks.append(desc_text)
+                            await send_event(f"data: {json.dumps({'type': 'token', 'content': desc_text})}\n\n")
+                            log_chat_intent(
+                                req_id=request.headers.get("X-Request-ID"),
+                                visual_intent=True,
+                                scope="image_description",
+                                attached_doc_ids=conv_attached_ids,
+                                images_found=len(desc_images),
+                                rewritten_query=query,
+                                intent="DESCRIBE_IMAGE",
+                            )
+                        else:
+                            no_img_msg = "Please attach or upload an image to describe."
+                            full_content_chunks.append(no_img_msg)
+                            await send_event(f"data: {json.dumps({'type': 'token', 'content': no_img_msg})}\n\n")
 
                 elif intent in ["CHAT", "CONVERSATION"]:
                     async for token in stream_conversation_answer(
@@ -933,7 +1047,8 @@ async def send_chat_message_stream(
                     model=GROQ_MODEL,
                     latency_ms=t_total,
                 )
-            except Exception as exc:
+            except BaseException as exc:
+                logger.exception(f"Chat streaming error: {exc}")
                 err_str = str(exc).lower()
                 if "429" in err_str or "rate limit" in err_str or "circuit_breaker" in err_str:
                     err_msg = "The AI service is busy or its usage limit was reached, please try again in a minute."

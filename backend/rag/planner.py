@@ -29,7 +29,8 @@ SHOW_IMAGES_PATTERN = re.compile(
     rf"\b{IMAGE_NOUNS}\b.*?\b(?:in|from|inside|of|with|within)\b.*?\b{DOC_NOUNS}\b|"
     rf"\bshow\s+more\b|"
     rf"\bshow\s+uploaded\s+pictures?\b|"
-    rf"\b(?:any|is\s+there\s+any|are\s+there\s+any)\s+{IMAGE_NOUNS}\b",
+    rf"\b(?:any|is\s+there\s+any|are\s+there\s+any)\s+{IMAGE_NOUNS}\b|"
+    rf"\b(?:give\s+me|display|show)\s+(?:the\s+)?(?:picture|image|photo|pic)\b",
     re.IGNORECASE,
 )
 
@@ -45,7 +46,7 @@ FIND_IMAGE_PATTERN = re.compile(
 )
 
 DESCRIBE_IMAGE_PATTERN = re.compile(
-    rf"(?:describe|explain|what\s+is\s+in|what\s+does\s+this\s+show)\s+(?:this\s+|the\s+)?{IMAGE_NOUNS}",
+    rf"(?:describe|explain|what\s+is\s+in|what\s+does\s+(?:this\s+|it\s+)?show)\s+(?:(?:this|the|that|both|all)\s+)?(?:(?:first|second|third|fourth|1st|2nd|3rd|4th|last|previous|other)\s+)?{IMAGE_NOUNS}",
     re.IGNORECASE,
 )
 
@@ -74,8 +75,13 @@ def fuzzy_match_visual_intent(text: str) -> bool:
     """
     Robust regex and fuzzy matcher for visual intent.
     Catches queries like 'shw me pictures', 'pics in documen', 'sho pic', etc.
+    Excludes questions ABOUT images (comparisons, counts, feature search).
     """
     lowered = text.lower().strip()
+
+    # Questions ABOUT images should never be treated as display requests
+    if any(p in lowered for p in ["how many", "count", "number of", "same to", "same as", "is previous", "identical", "difference between", "which image has"]):
+        return False
 
     if SHOW_IMAGES_PATTERN.search(lowered):
         return True
@@ -96,8 +102,10 @@ def fuzzy_match_visual_intent(text: str) -> bool:
 
     if has_img_word:
         has_verb = any(
-            w in ("shw", "sho", "veiw", "fnd") or
-            bool(difflib.get_close_matches(w, VISUAL_VERBS, n=1, cutoff=0.72))
+            w not in ("last", "past", "fast", "post", "first") and (
+                w in ("shw", "sho", "veiw", "fnd") or
+                bool(difflib.get_close_matches(w, VISUAL_VERBS, n=1, cutoff=0.75))
+            )
             for w in words
         )
         has_doc = any(
@@ -105,7 +113,7 @@ def fuzzy_match_visual_intent(text: str) -> bool:
             bool(difflib.get_close_matches(w, VISUAL_DOC_WORDS, n=1, cutoff=0.72))
             for w in words
         )
-        if has_verb or has_doc or "me" in words or "in" in words:
+        if has_verb or has_doc or "me" in words:
             return True
 
     return False
@@ -231,9 +239,26 @@ def plan(message: str, conversation_state: Optional[Dict[str, Any]] = None) -> D
     pages = parse_page_numbers(raw_query)
     ordinal = parse_ordinals(raw_query)
     file_ref = parse_file_reference(raw_query, attached_docs)
-    is_all = bool(re.search(r"\b(all|all\s+images|all\s+pictures|all\s+uploaded\s+pictures|every\s+image)\b", lowered))
+    is_all = bool(re.search(r"\b(all|all\s+images|all\s+pictures|all\s+uploaded\s+pictures|every\s+image|both\s+images|both\s+pictures)\b", lowered))
     has_deictic = bool(re.search(r"\b(this\s+picture|this\s+image|this\s+photo|this\s+diagram|this\s+screenshot)\b", lowered))
-    is_comparison = bool(re.search(r"\b(compare|contrast|difference\s+between)\b", lowered))
+    is_comparison = bool(re.search(r"\b(compare|contrast|difference\s+between|same\s+(?:to|as|one)|identical|is\s+.*?\s+same)\b", lowered))
+    is_count = bool(re.search(r"\b(how\s+many\s+(?:images?|pictures?|photos?)|count\s+(?:the\s+)?(?:images?|pictures?|photos?)|number\s+of\s+(?:images?|pictures?|photos?))\b", lowered))
+    which_has_match = re.search(r"\bwhich\s+(?:image|picture|photo|file|doc)\s+has\s+(?:the\s+)?([a-z0-9_\-]+)\b", lowered)
+    target_feature = which_has_match.group(1) if which_has_match else None
+    is_other = bool(re.search(r"\b(the\s+other\s+one|what\s+about\s+the\s+other|show\s+the\s+other)\b", lowered))
+    page_display_match = re.search(r"\b(?:show|display|view|give\s+me|see)\b.*?\bpage_?(\d+)\b", lowered)
+
+    if page_display_match:
+        p_num = int(page_display_match.group(1))
+        if p_num not in pages:
+            pages.append(p_num)
+        if not file_ref:
+            for d in attached_docs:
+                fname = getattr(d, "filename", None) or (d.get("filename") if isinstance(d, dict) else "")
+                if fname and f"page_{p_num}" in fname.lower():
+                    doc_id = getattr(d, "id", None) or (d.get("id") if isinstance(d, dict) else "")
+                    file_ref = {"id": str(doc_id), "filename": fname, "type": "exact"}
+                    break
 
     # Check for direct pairwise image match e.g. 'is picture 1 in picture 2'
     compare_pair_match = re.search(
@@ -254,9 +279,12 @@ def plan(message: str, conversation_state: Optional[Dict[str, Any]] = None) -> D
         "ordinal": ordinal,
         "all": is_all,
         "deictic": has_deictic,
-        "is_comparison": is_comparison or (compare_pair is not None),
+        "is_comparison": is_comparison,
         "compare_pair": compare_pair,
         "scope_all_docs": scope_all_docs,
+        "is_count": is_count,
+        "target_feature": target_feature,
+        "is_other": is_other,
     }
 
     # 2. Rule-based Intent Matching (BEFORE any LLM router call)
@@ -265,8 +293,16 @@ def plan(message: str, conversation_state: Optional[Dict[str, Any]] = None) -> D
     if GREETING_PATTERN.match(raw_query):
         intent = "CHAT"
         params["greeting"] = True
-    elif compare_pair:
+    elif is_count:
+        intent = "IMAGE_COUNT"
+    elif is_comparison or compare_pair:
         intent = "FIND_IMAGE"
+    elif target_feature:
+        intent = "FIND_IMAGE"
+    elif is_other:
+        intent = "SHOW_IMAGES"
+    elif page_display_match:
+        intent = "SHOW_IMAGES"
     elif FIND_IMAGE_PATTERN.search(raw_query):
         intent = "FIND_IMAGE"
     elif DESCRIBE_IMAGE_PATTERN.search(raw_query):
@@ -282,7 +318,7 @@ def plan(message: str, conversation_state: Optional[Dict[str, Any]] = None) -> D
             intent = "DESCRIBE_IMAGE"
         else:
             intent = "SHOW_IMAGES"
-    elif pages and any(word in lowered for word in ["image", "picture", "photo", "chart", "diagram", "figure", "visual"]):
+    elif pages and any(word in lowered for word in ["image", "picture", "photo", "chart", "diagram", "figure", "visual", "page"]):
         intent = "SHOW_IMAGES"
     elif CHAT_PATTERN.match(raw_query):
         intent = "CHAT"

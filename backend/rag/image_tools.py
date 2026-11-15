@@ -40,8 +40,13 @@ def handle_show_images(
     file_ref = params.get("file_reference")
     if file_ref and isinstance(file_ref, dict):
         ref_id = file_ref.get("id")
+        ref_fname = file_ref.get("filename")
         if ref_id:
             matched = [d for d in target_docs if str(d.id) == str(ref_id)]
+            if matched:
+                target_docs = matched
+        elif ref_fname:
+            matched = [d for d in target_docs if d.filename.lower() == ref_fname.lower()]
             if matched:
                 target_docs = matched
         elif file_ref.get("type") == "generic_pdf":
@@ -49,7 +54,19 @@ def handle_show_images(
             if pdfs:
                 target_docs = pdfs
 
-    req_pages = params.get("page_numbers") or []
+    req_pages = list(params.get("page_numbers") or [])
+
+    # If page number matches a filename like page_2.png, narrow by document
+    if req_pages:
+        matched_page_docs = []
+        for p_num in req_pages:
+            for d in target_docs:
+                if f"page_{p_num}" in d.filename.lower():
+                    matched_page_docs.append(d)
+        if matched_page_docs:
+            target_docs = matched_page_docs
+            req_pages = []
+
     all_assets: List[Dict[str, Any]] = []
 
     # 2. Gather assets for all target docs
@@ -60,26 +77,28 @@ def handle_show_images(
         if not embedded_assets:
             hashes = db.query(ImageHash).filter(ImageHash.doc_id == doc.id).all()
             for h in hashes:
-                all_assets.append({
-                    "id": h.id,
-                    "doc_id": doc.id,
-                    "filename": doc.filename,
-                    "kind": "embedded",
-                    "page": h.page or 1,
-                    "path": h.image_path,
-                    "caption": f"Image from {doc.filename}, {h.location_label}",
-                })
+                if h.image_path and os.path.exists(h.image_path):
+                    all_assets.append({
+                        "id": h.id,
+                        "doc_id": doc.id,
+                        "filename": doc.filename,
+                        "kind": "embedded",
+                        "page": h.page or 1,
+                        "path": h.image_path,
+                        "caption": f"Image from {doc.filename}, {h.location_label}",
+                    })
         else:
             for ea in embedded_assets:
-                all_assets.append({
-                    "id": ea.id,
-                    "doc_id": doc.id,
-                    "filename": doc.filename,
-                    "kind": ea.kind,
-                    "page": ea.page,
-                    "path": ea.path,
-                    "caption": ea.caption or f"Image from {doc.filename}, page {ea.page}",
-                })
+                if ea.path and os.path.exists(ea.path):
+                    all_assets.append({
+                        "id": ea.id,
+                        "doc_id": doc.id,
+                        "filename": doc.filename,
+                        "kind": ea.kind,
+                        "page": ea.page,
+                        "path": ea.path,
+                        "caption": ea.caption or f"Image from {doc.filename}, page {ea.page}",
+                    })
 
         # Check requested pages: if a requested page has NO embedded image, render that PDF page
         if req_pages and doc.file_type == "pdf":
@@ -87,7 +106,7 @@ def handle_show_images(
             for p_num in req_pages:
                 if p_num not in doc_pages_with_embed:
                     rendered = render_pdf_page_lazy(doc, p_num, db, dpi=110)
-                    if rendered:
+                    if rendered and rendered.path and os.path.exists(rendered.path):
                         all_assets.append({
                             "id": rendered.id,
                             "doc_id": doc.id,
@@ -102,8 +121,9 @@ def handle_show_images(
     if req_pages:
         all_assets = [a for a in all_assets if a["page"] in req_pages]
 
-    # 4. Sort deterministically by page, then id
-    all_assets.sort(key=lambda x: (x.get("page", 1), x.get("id", 0)))
+    # 4. Sort deterministically: candidate document order, then page, then asset id
+    doc_order = {str(doc.id): idx for idx, doc in enumerate(candidate_docs)}
+    all_assets.sort(key=lambda x: (doc_order.get(str(x.get("doc_id")), 999), x.get("page", 1), str(x.get("id", ""))))
 
     # 5. Ordinal filtering (e.g. 'first', 'second', 'last')
     ordinal = params.get("ordinal")
