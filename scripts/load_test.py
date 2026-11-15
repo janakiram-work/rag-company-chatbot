@@ -129,8 +129,11 @@ def simulate_user(user_idx: int, base_url: str, questions: list):
 
 def simulate_admin(base_url: str):
     """Simulate admin exercising all admin endpoints concurrently."""
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@abctechnologies.com")
-    admin_password = os.getenv("ADMIN_PASSWORD", "AdminSecurePass!2026")
+    admin_email = os.getenv("ADMIN_EMAIL", "")
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    if not admin_password or not admin_email:
+        print("Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables first.")
+        sys.exit(1)
 
     session = requests.Session()
     session.headers.update({
@@ -178,6 +181,11 @@ def simulate_admin(base_url: str):
 
 
 def run_load_test(base_url: str = DEFAULT_BASE_URL, num_users: int = 8):
+    admin_email = os.getenv("ADMIN_EMAIL", "")
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    if not admin_password or not admin_email:
+        print("Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables first.")
+        sys.exit(1)
     print("=" * 80)
     print(f"Executing Concurrency & Load Test: {num_users} Parallel Users + Admin Tasks")
     print(f"Target: {base_url} (with X-Forwarded-For + X-Forwarded-Proto: https)")

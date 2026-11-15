@@ -40,8 +40,11 @@ class SmokeTestRunner:
         self.user_b_session = requests.Session()
 
         # Credentials
-        self.admin_email = os.getenv("ADMIN_EMAIL", "admin@abctechnologies.com")
-        self.admin_password = os.getenv("ADMIN_PASSWORD", "AdminSecurePass!2026")
+        self.admin_email = os.getenv("ADMIN_EMAIL", "")
+        self.admin_password = os.getenv("ADMIN_PASSWORD", "")
+        if not self.admin_password or not self.admin_email:
+            print("Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables first.")
+            sys.exit(1)
         self.test_password = os.getenv("TEST_USER_PASSWORD", "SmokeTestPass@123")
 
         ts = int(time.time())

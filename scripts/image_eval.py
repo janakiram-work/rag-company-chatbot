@@ -61,8 +61,11 @@ class ImageEvaluator:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
-        self.admin_email = os.getenv("ADMIN_EMAIL", "admin@abctechnologies.com")
-        self.admin_password = os.getenv("ADMIN_PASSWORD", "AdminSecurePass!2026")
+        self.admin_email = os.getenv("ADMIN_EMAIL", "")
+        self.admin_password = os.getenv("ADMIN_PASSWORD", "")
+        if not self.admin_password or not self.admin_email:
+            print("Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables first.")
+            sys.exit(1)
         self.token = None
         self.headers = {}
         self.doc1 = None  # page_1.png
