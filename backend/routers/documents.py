@@ -178,11 +178,19 @@ async def upload_document(
         if conv and (conv.user_id == current_user.id or current_user.role == "admin"):
             conv.active_doc_id = doc_id
             conv.default_doc_id = None  # Reset remembered file when a new file is attached
-            existing_cd = db.query(ConversationDocument).filter(
-                ConversationDocument.conversation_id == conv.id,
-                ConversationDocument.doc_id == doc_id,
-            ).first()
-            if not existing_cd:
+            existing_cds = db.query(ConversationDocument).filter(
+                ConversationDocument.conversation_id == conv.id
+            ).all()
+            already_attached = False
+            for ecd in existing_cds:
+                if ecd.doc_id == doc_id:
+                    already_attached = True
+                    break
+                ecd_d = db.query(Document).filter(Document.id == ecd.doc_id).first()
+                if ecd_d and ecd_d.filename.strip().lower() == clean_name.strip().lower():
+                    already_attached = True
+                    break
+            if not already_attached:
                 db.add(ConversationDocument(
                     conversation_id=conv.id,
                     doc_id=doc_id,
@@ -307,7 +315,17 @@ def list_user_documents(
                 if active_d:
                     docs.append(active_d)
 
-        return [DocumentResponse.model_validate(d) for d in docs]
+        unique_docs = []
+        seen_ids = set()
+        seen_names = set()
+        for d in docs:
+            norm = (d.filename or "").strip().lower()
+            if d.id not in seen_ids and (not norm or norm not in seen_names):
+                seen_ids.add(d.id)
+                if norm:
+                    seen_names.add(norm)
+                unique_docs.append(d)
+        return [DocumentResponse.model_validate(d) for d in unique_docs]
 
     if current_user.role == "admin":
         docs = (

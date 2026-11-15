@@ -70,6 +70,7 @@ class ImageEvaluator:
         self.headers = {}
         self.doc1 = None  # page_1.png
         self.doc2 = None  # page_2.png
+        self.doc_txt = None  # ML_Lifecycle.txt
         self.results = []
 
     def login(self):
@@ -117,8 +118,23 @@ class ImageEvaluator:
                         break
                     time.sleep(1)
 
+        p3 = next((d for d in existing if d["filename"] == "ML_Lifecycle.txt" and d.get("status") == "ready"), None)
+        if not p3:
+            txt_bytes = b"Machine learning lifecycle involves data preparation, model training, validation, deployment and monitoring."
+            files = {"file": ("ML_Lifecycle.txt", txt_bytes, "text/plain")}
+            r3 = self.session.post(upload_url, headers=self.headers, files=files, data={"scope": "user"})
+            if r3.status_code in (200, 201):
+                p3 = r3.json()
+                for _ in range(30):
+                    st = self.session.get(f"{self.base_url}/api/documents/{p3['id']}/status", headers=self.headers)
+                    if st.status_code == 200 and st.json().get("status") == "ready":
+                        p3 = st.json()
+                        break
+                    time.sleep(1)
+
         self.doc1 = p1
         self.doc2 = p2
+        self.doc_txt = p3
 
     def create_attached_conversation(self) -> str:
         """Create conversation with page_1.png and page_2.png attached."""
@@ -434,6 +450,95 @@ class ImageEvaluator:
             "answer_type": res17["answer_type"],
             "status": "PASS" if passed17 else "FAIL",
             "expected": "Resolves to the other image (page_1.png)",
+        })
+
+        # 18. Edge case 1: attaching same document twice shows one chip
+        c18 = self.session.post(
+            f"{self.base_url}/api/conversations",
+            headers=self.headers,
+            json={"title": "Dedup Test", "active_doc_id": self.doc1["id"]},
+        ).json()["id"]
+        self.session.put(
+            f"{self.base_url}/api/conversations/{c18}/filter?doc_id={self.doc1['id']}",
+            headers=self.headers,
+        )
+        c18_data = self.session.get(f"{self.base_url}/api/conversations/{c18}", headers=self.headers).json()
+        att18 = c18_data.get("attached_documents", [])
+        passed18 = len(att18) == 1 and att18[0]["id"] == self.doc1["id"]
+        matrix_results.append({
+            "question": "attaching same document twice shows one chip",
+            "detected_intent": "ATTACH_DEDUPLICATION",
+            "images_returned": 0,
+            "image_names": [],
+            "answer_type": "deduplication",
+            "status": "PASS" if passed18 else "FAIL",
+            "expected": "Exactly 1 attached chip (no duplicate)",
+        })
+
+        # 19. Edge case 2: "is this image same to that txt document"
+        c19 = self.session.post(
+            f"{self.base_url}/api/conversations",
+            headers=self.headers,
+            json={"title": "Img vs Txt Test", "active_doc_id": self.doc1["id"]},
+        ).json()["id"]
+        if self.doc_txt:
+            self.session.put(
+                f"{self.base_url}/api/conversations/{c19}/filter?doc_id={self.doc_txt['id']}",
+                headers=self.headers,
+            )
+        res19 = self.send_query(c19, "is this image same to that txt document")
+        tok19_lower = res19["tokens"].lower()
+        no_second_img_prompt = "please upload the second" not in tok19_lower
+        mentions_different = "different" in tok19_lower
+        mentions_docs = ("page_1" in tok19_lower or "image" in tok19_lower) and ("ml_lifecycle" in tok19_lower or "txt" in tok19_lower or "document" in tok19_lower)
+        passed19 = no_second_img_prompt and mentions_different and mentions_docs
+        matrix_results.append({
+            "question": "is this image same to that txt document",
+            "detected_intent": res19["detected_intent"],
+            "images_returned": len(res19["images"]),
+            "image_names": [i.get("filename") for i in res19["images"]],
+            "answer_type": res19["answer_type"],
+            "status": "PASS" if passed19 else "FAIL",
+            "expected": "Says different kinds of documents, states contents, no 'please upload second image'",
+        })
+
+        # 20. Edge case 3: "is the uploaded image same to previous images"
+        c20 = self.create_attached_conversation()
+        res20 = self.send_query(c20, "is the uploaded image same to previous images")
+        tok20_lower = res20["tokens"].lower()
+        passed20 = ("matches" in tok20_lower or "matches none" in tok20_lower or "different" in tok20_lower or "identical" in tok20_lower)
+        matrix_results.append({
+            "question": "is the uploaded image same to previous images",
+            "detected_intent": res20["detected_intent"],
+            "images_returned": len(res20["images"]),
+            "image_names": [i.get("filename") for i in res20["images"]],
+            "answer_type": res20["answer_type"],
+            "status": "PASS" if passed20 else "FAIL",
+            "expected": "Resolves uploaded image to most recent and compares with earlier images",
+        })
+
+        # 21. Edge case 4: "is there any picture in there" with mixed attachments
+        c21 = self.session.post(
+            f"{self.base_url}/api/conversations",
+            headers=self.headers,
+            json={"title": "Mixed Picture Test", "active_doc_id": self.doc1["id"]},
+        ).json()["id"]
+        if self.doc_txt:
+            self.session.put(
+                f"{self.base_url}/api/conversations/{c21}/filter?doc_id={self.doc_txt['id']}",
+                headers=self.headers,
+            )
+        res21 = self.send_query(c21, "is there any picture in there")
+        tok21_lower = res21["tokens"].lower()
+        passed21 = ("ml_lifecycle.txt has no images" in tok21_lower or "no images" in tok21_lower) and ("page_1.png is an image" in tok21_lower or "is an image" in tok21_lower)
+        matrix_results.append({
+            "question": "is there any picture in there",
+            "detected_intent": res21["detected_intent"],
+            "images_returned": len(res21["images"]),
+            "image_names": [i.get("filename") for i in res21["images"]],
+            "answer_type": res21["answer_type"],
+            "status": "PASS" if passed21 else "FAIL",
+            "expected": "Answers per attached document (e.g. ML_Lifecycle.txt has no images; page_1.png is an image)",
         })
 
         self.results = matrix_results

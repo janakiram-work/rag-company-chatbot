@@ -273,18 +273,25 @@ def plan(message: str, conversation_state: Optional[Dict[str, Any]] = None) -> D
         re.search(r"\b(in\s+the\s+documents|in\s+documents|in\s+the\s+company|across\s+documents|company)\b", lowered)
     )
 
+    has_picture_check = bool(re.search(r"\b(?:is\s+there\s+any\s+(?:picture|image|photo)|are\s+there\s+(?:any\s+)?(?:pictures|images|photos)|any\s+(?:pictures?|images?|photos?)\s+in\s+there|pictures?\s+in\s+there)\b", lowered))
+    is_compare_previous = bool(re.search(r"\b(?:uploaded|latest|new)\s+(?:image|picture|pic|photo)\s+same\s+(?:to|as)\s+previous\s+(?:images?|pictures?|pics?|photos?)\b|\b(?:uploaded|latest)\s+(?:image|picture)\b.*?\bsame\b.*?\bprevious\b|\bcompare\s+(?:the\s+)?(?:uploaded|latest)\s+(?:image|picture)\s+(?:to|with)\s+previous\b|\bsame\s+(?:to|as)\s+previous\s+(?:images?|pictures?)\b", lowered))
+    is_image_vs_doc_comparison = bool(re.search(r"\b(?:image|picture|pic|photo)\s+same\s+(?:to|as)\s+(?:that\s+|the\s+)?(?:txt|text|doc|document|pdf|file)\b|\b(?:txt|text|doc|document|pdf|file)\s+same\s+(?:to|as)\s+(?:that\s+|the\s+)?(?:image|picture|pic|photo)\b|\bcompare\s+(?:the\s+|this\s+)?(?:image|picture)\s+(?:to|with|and)\s+(?:the\s+|that\s+)?(?:txt|text|doc|document|pdf|file)\b", lowered))
+
     params = {
         "page_numbers": pages,
         "file_reference": file_ref,
         "ordinal": ordinal,
         "all": is_all,
         "deictic": has_deictic,
-        "is_comparison": is_comparison,
+        "is_comparison": is_comparison or is_compare_previous or is_image_vs_doc_comparison,
         "compare_pair": compare_pair,
         "scope_all_docs": scope_all_docs,
         "is_count": is_count,
         "target_feature": target_feature,
         "is_other": is_other,
+        "has_picture_check": has_picture_check,
+        "compare_previous": is_compare_previous,
+        "is_image_vs_doc_comparison": is_image_vs_doc_comparison,
     }
 
     # 2. Rule-based Intent Matching (BEFORE any LLM router call)
@@ -295,7 +302,9 @@ def plan(message: str, conversation_state: Optional[Dict[str, Any]] = None) -> D
         params["greeting"] = True
     elif is_count:
         intent = "IMAGE_COUNT"
-    elif is_comparison or compare_pair:
+    elif has_picture_check:
+        intent = "IMAGE_PRESENCE"
+    elif is_comparison or compare_pair or is_compare_previous or is_image_vs_doc_comparison:
         intent = "FIND_IMAGE"
     elif target_feature:
         intent = "FIND_IMAGE"

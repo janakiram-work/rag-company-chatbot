@@ -87,6 +87,9 @@ def check_clarification_needed(
                 }
         return None
 
+    if intent == "IMAGE_PRESENCE" or params.get("has_picture_check") or params.get("compare_previous"):
+        return None
+
     attached_pdfs = [d for d in attached_docs if d.file_type == "pdf"]
     attached_images = [d for d in attached_docs if d.file_type in ("png", "jpg", "jpeg")]
     has_specific_file = bool(params.get("file_reference") and params["file_reference"].get("id"))
@@ -101,6 +104,8 @@ def check_clarification_needed(
 
     # Rule 5: Comparison request with only one image
     if params.get("is_comparison") and len(attached_images) == 1:
+        if params.get("is_image_vs_doc_comparison") or len(attached_docs) > len(attached_images) or any(d.file_type not in ("png", "jpg", "jpeg") for d in attached_docs):
+            return None
         return {
             "question": "I see only one image, please upload the second.",
             "options": [],

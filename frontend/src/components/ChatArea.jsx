@@ -100,11 +100,22 @@ export default function ChatArea({
         setStatusText('');
         if (conversation.attached_documents && conversation.attached_documents.length > 0) {
           const validDocs = conversation.attached_documents.filter((d) => d && d.id && d.filename);
-          setAttachedDocs(validDocs);
-          if (validDocs.length > 0) {
+          const seenIds = new Set();
+          const seenFiles = new Set();
+          const uniqueDocs = [];
+          for (const d of validDocs) {
+            const normName = (d.filename || '').trim().toLowerCase();
+            if (!seenIds.has(d.id) && !seenFiles.has(normName)) {
+              seenIds.add(d.id);
+              if (normName) seenFiles.add(normName);
+              uniqueDocs.push(d);
+            }
+          }
+          setAttachedDocs(uniqueDocs);
+          if (uniqueDocs.length > 0) {
             setActiveDocFilter({
-              id: validDocs[validDocs.length - 1].id,
-              name: validDocs[validDocs.length - 1].filename,
+              id: uniqueDocs[uniqueDocs.length - 1].id,
+              name: uniqueDocs[uniqueDocs.length - 1].filename,
             });
           } else {
             setActiveDocFilter(null);
@@ -288,7 +299,10 @@ export default function ChatArea({
             setUploadStatus({ filename: file.name, state: 'ready' });
             addToast(`Document "${file.name}" ready! Added to conversation.`, 'success', 5000);
             setAttachedDocs((prev) => {
-              if (prev.some((p) => p.id === doc.id)) return prev;
+              const normName = (doc.filename || '').trim().toLowerCase();
+              if (prev.some((p) => p.id === doc.id || (p.filename && p.filename.trim().toLowerCase() === normName))) {
+                return prev;
+              }
               return [...prev, { id: doc.id, filename: doc.filename, file_type: doc.file_type }];
             });
             setActiveDocFilter({ id: doc.id, name: doc.filename });
@@ -465,7 +479,11 @@ export default function ChatArea({
                   </span>
                 </div>
               )}
-              {attachedDocs.map((d) => (
+              {attachedDocs.filter((d, idx, arr) => {
+                if (!d || !d.id) return false;
+                const norm = (d.filename || '').trim().toLowerCase();
+                return arr.findIndex((x) => x.id === d.id || (norm && (x.filename || '').trim().toLowerCase() === norm)) === idx;
+              }).map((d) => (
                 <div
                   key={d.id}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"

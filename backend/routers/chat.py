@@ -95,6 +95,8 @@ def sanitize_conversation_attachments(conv: Conversation, current_user: User, db
     valid_docs: List[Document] = []
     stale_cd_ids = []
     missing_detected = False
+    seen_ids = set()
+    seen_names = set()
 
     for cd in cds:
         d = db.query(Document).filter(Document.id == cd.doc_id).first()
@@ -102,7 +104,13 @@ def sanitize_conversation_attachments(conv: Conversation, current_user: User, db
             missing_detected = True
             stale_cd_ids.append(cd.id)
         else:
-            if d not in valid_docs:
+            norm_name = (d.filename or "").strip().lower()
+            if d.id in seen_ids or (norm_name and norm_name in seen_names):
+                stale_cd_ids.append(cd.id)
+            else:
+                seen_ids.add(d.id)
+                if norm_name:
+                    seen_names.add(norm_name)
                 valid_docs.append(d)
 
     if conv.active_doc_id:
@@ -111,13 +119,17 @@ def sanitize_conversation_attachments(conv: Conversation, current_user: User, db
             missing_detected = True
             conv.active_doc_id = None
         else:
-            if active_d not in valid_docs:
+            norm_active = (active_d.filename or "").strip().lower()
+            if active_d.id not in seen_ids and (not norm_active or norm_active not in seen_names):
+                seen_ids.add(active_d.id)
+                if norm_active:
+                    seen_names.add(norm_active)
                 valid_docs.append(active_d)
 
     if stale_cd_ids:
         db.query(ConversationDocument).filter(ConversationDocument.id.in_(stale_cd_ids)).delete(synchronize_session=False)
 
-    if missing_detected:
+    if missing_detected or stale_cd_ids:
         if valid_docs:
             conv.active_doc_id = valid_docs[-1].id
         else:
@@ -153,18 +165,25 @@ def list_user_conversations(
             .all()
         )
         attached_items = []
+        seen_list_ids = set()
+        seen_list_names = set()
         for cd in cds:
             d = db.query(Document).filter(Document.id == cd.doc_id).first()
             if d and (d.scope == "company" or d.owner_id == current_user.id or current_user.role == "admin"):
-                attached_items.append(
-                    AttachedDocumentItem(
-                        id=d.id,
-                        filename=d.filename,
-                        file_type=d.file_type,
-                        status=d.status,
-                        attached_at=cd.attached_at,
+                norm_name = (d.filename or "").strip().lower()
+                if d.id not in seen_list_ids and (not norm_name or norm_name not in seen_list_names):
+                    seen_list_ids.add(d.id)
+                    if norm_name:
+                        seen_list_names.add(norm_name)
+                    attached_items.append(
+                        AttachedDocumentItem(
+                            id=d.id,
+                            filename=d.filename,
+                            file_type=d.file_type,
+                            status=d.status,
+                            attached_at=cd.attached_at,
+                        )
                     )
-                )
 
         # Do not list empty conversation rows with 0 messages unless it has an active attached doc
         if len(c.messages) == 0 and not active_doc and not attached_items:
@@ -265,18 +284,25 @@ def get_conversation_history(
         .all()
     )
     attached_items = []
+    seen_hist_ids = set()
+    seen_hist_names = set()
     for cd in cds:
         d = db.query(Document).filter(Document.id == cd.doc_id).first()
         if d and (d.scope == "company" or d.owner_id == current_user.id or current_user.role == "admin"):
-            attached_items.append(
-                AttachedDocumentItem(
-                    id=d.id,
-                    filename=d.filename,
-                    file_type=d.file_type,
-                    status=d.status,
-                    attached_at=cd.attached_at,
+            norm_name = (d.filename or "").strip().lower()
+            if d.id not in seen_hist_ids and (not norm_name or norm_name not in seen_hist_names):
+                seen_hist_ids.add(d.id)
+                if norm_name:
+                    seen_hist_names.add(norm_name)
+                attached_items.append(
+                    AttachedDocumentItem(
+                        id=d.id,
+                        filename=d.filename,
+                        file_type=d.file_type,
+                        status=d.status,
+                        attached_at=cd.attached_at,
+                    )
                 )
-            )
 
     doc_name = active_doc.filename if active_doc else (attached_items[-1].filename if attached_items else None)
     active_id = active_doc.id if active_doc else (attached_items[-1].id if attached_items else None)
@@ -457,11 +483,19 @@ def update_conversation_filter(
             db.commit()
             return {"status": "success", "active_doc_id": None, "note": "The attached document is no longer available"}
         conv.active_doc_id = doc_id
-        exists = db.query(ConversationDocument).filter(
-            ConversationDocument.conversation_id == conv.id,
-            ConversationDocument.doc_id == doc_id,
-        ).first()
-        if not exists:
+        existing_cds = db.query(ConversationDocument).filter(
+            ConversationDocument.conversation_id == conv.id
+        ).all()
+        already_attached = False
+        for ecd in existing_cds:
+            if ecd.doc_id == doc_id:
+                already_attached = True
+                break
+            ecd_doc = db.query(Document).filter(Document.id == ecd.doc_id).first()
+            if ecd_doc and ecd_doc.filename.strip().lower() == doc.filename.strip().lower():
+                already_attached = True
+                break
+        if not already_attached:
             db.add(ConversationDocument(
                 conversation_id=conv.id,
                 doc_id=doc_id,
@@ -738,9 +772,119 @@ async def send_chat_message_stream(
                     final_sources = []
                     final_images = []
 
+                elif intent == "IMAGE_PRESENCE" or params.get("has_picture_check"):
+                    if not attached_docs_list:
+                        text = "No documents are attached to this conversation."
+                    else:
+                        doc_answers = []
+                        for d in attached_docs_list:
+                            if d.file_type in ("png", "jpg", "jpeg"):
+                                doc_answers.append(f"{d.filename} is an image")
+                            elif d.file_type == "pdf":
+                                embedded = db.query(ImageAsset).filter(
+                                    ImageAsset.doc_id == d.id,
+                                    ImageAsset.kind == "embedded",
+                                ).all()
+                                if embedded:
+                                    doc_answers.append(f"{d.filename} has {len(embedded)} image{'s' if len(embedded) != 1 else ''}")
+                                else:
+                                    doc_answers.append(f"{d.filename} has no images")
+                            else:
+                                doc_answers.append(f"{d.filename} has no images")
+                        text = "; ".join(doc_answers) + "."
+                    await send_event(f"data: {json.dumps({'type': 'token', 'content': text})}\n\n")
+                    full_content_chunks.append(text)
+                    final_sources = []
+                    final_images = []
+                    log_chat_intent(
+                        req_id=request.headers.get("X-Request-ID"),
+                        visual_intent=True,
+                        scope=scope_name,
+                        attached_doc_ids=conv_attached_ids,
+                        images_found=len(attached_img_docs),
+                        rewritten_query=query,
+                        intent="IMAGE_PRESENCE",
+                    )
+
                 elif intent == "FIND_IMAGE" and not params.get("compare_pair") and (params.get("is_comparison") or "same" in query.lower() or "compare" in query.lower()):
                     await send_event(f"data: {json.dumps({'type': 'status', 'message': 'Matching image...'})}\n\n")
-                    if len(attached_img_docs) >= 2:
+                    lower_q = query.lower()
+                    if params.get("compare_previous") or ("uploaded" in lower_q and "previous" in lower_q and ("same" in lower_q or "compare" in lower_q)):
+                        if len(attached_img_docs) >= 1:
+                            latest_img = attached_img_docs[-1]
+                            earlier_imgs = attached_img_docs[:-1]
+                            if not earlier_imgs:
+                                text = f"The uploaded image ({latest_img.filename}) has no previous images attached to compare with."
+                            else:
+                                path_latest = resolve_file_location(str(latest_img.id), latest_img.filename, latest_img.filepath, UPLOAD_DIR)
+                                h_latest = compute_image_phash(path_latest) if path_latest and os.path.exists(path_latest) else None
+                                if h_latest is None:
+                                    db_h = db.query(ImageHash).filter(ImageHash.doc_id == latest_img.id).first()
+                                    if db_h:
+                                        h_latest = db_h.phash
+                                matched_earlier = []
+                                for prev_img in earlier_imgs:
+                                    path_prev = resolve_file_location(str(prev_img.id), prev_img.filename, prev_img.filepath, UPLOAD_DIR)
+                                    h_prev = compute_image_phash(path_prev) if path_prev and os.path.exists(path_prev) else None
+                                    if h_prev is None:
+                                        db_prev_h = db.query(ImageHash).filter(ImageHash.doc_id == prev_img.id).first()
+                                        if db_prev_h:
+                                            h_prev = db_prev_h.phash
+                                    diff = 99
+                                    if h_latest is not None and h_prev is not None:
+                                        try:
+                                            val_l = int(str(h_latest), 16) if isinstance(h_latest, str) else int(h_latest)
+                                            val_p = int(str(h_prev), 16) if isinstance(h_prev, str) else int(h_prev)
+                                            diff = bin(val_l ^ val_p).count("1")
+                                        except Exception:
+                                            diff = 0 if str(h_latest) == str(h_prev) else 99
+                                    if diff <= 5:
+                                        matched_earlier.append(prev_img.filename)
+                                if matched_earlier:
+                                    text = f"The uploaded image ({latest_img.filename}) matches earlier image: {', '.join(matched_earlier)}."
+                                else:
+                                    text = f"The uploaded image ({latest_img.filename}) matches none of the previous images."
+                        else:
+                            text = "Please upload an image to compare."
+                    elif params.get("is_image_vs_doc_comparison") or (len(attached_img_docs) >= 1 and any(d.file_type not in ("png", "jpg", "jpeg") for d in attached_docs_list)):
+                        img_d = attached_img_docs[0]
+                        non_img_docs = [d for d in attached_docs_list if d.file_type not in ("png", "jpg", "jpeg")]
+                        txt_d = non_img_docs[0] if non_img_docs else None
+
+                        img_assets = db.query(ImageAsset).filter(ImageAsset.doc_id == img_d.id).all()
+                        ocr_snippets = [a.ocr_text.strip() for a in img_assets if a.ocr_text and a.ocr_text.strip()]
+                        if not ocr_snippets:
+                            ocr_snippets = [a.caption.strip() for a in img_assets if a.caption and a.caption.strip()]
+                        img_text = " ".join(ocr_snippets).strip()
+
+                        txt_content = ""
+                        if txt_d:
+                            txt_path = resolve_file_location(str(txt_d.id), txt_d.filename, txt_d.filepath, UPLOAD_DIR)
+                            if txt_path and os.path.exists(txt_path):
+                                if txt_d.file_type == "txt":
+                                    try:
+                                        with open(txt_path, "r", encoding="utf-8", errors="ignore") as f:
+                                            txt_content = f.read().strip()
+                                    except Exception:
+                                        pass
+                                if not txt_content:
+                                    try:
+                                        from backend.rag.extractors import extract_document
+                                        sections = extract_document(txt_path, txt_d.file_type, str(txt_d.id))
+                                        txt_content = " ".join(s.text for s in sections if s.text).strip()
+                                    except Exception:
+                                        pass
+
+                        img_summary = f'containing text "{img_text[:120]}"' if img_text else "with no readable text"
+                        txt_summary = f'containing "{txt_content[:120]}"' if txt_content else "with no readable text"
+                        txt_type = txt_d.file_type.upper() if txt_d else "TEXT"
+                        txt_name = txt_d.filename if txt_d else "text document"
+
+                        text = (
+                            f"They are different kinds of documents: {img_d.filename} is an image file ({img_summary}), "
+                            f"while {txt_name} is a {txt_type} document ({txt_summary})."
+                        )
+                    elif len(attached_img_docs) >= 2:
                         doc_a = attached_img_docs[0]
                         doc_b = attached_img_docs[1]
                         path_a = resolve_file_location(str(doc_a.id), doc_a.filename, doc_a.filepath, UPLOAD_DIR)
