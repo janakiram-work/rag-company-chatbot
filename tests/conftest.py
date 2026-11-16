@@ -52,6 +52,15 @@ cfg.DEMO_ADMIN_PASSWORD = "AdminTestSecurePass!2026"
 cfg.DEMO_USER_EMAIL = "user@test.local"
 cfg.DEMO_USER_PASSWORD = "UserTestSecurePass!2026"
 
+# Ensure demo fixtures exist for tests that reference demo/ files
+_demo_pdf = os.path.join(cfg.DEMO_DIR, "Acme_Foods_Overview.pdf")
+if not os.path.exists(_demo_pdf):
+    try:
+        from backend.create_demo_files import generate_all_demo_files
+        generate_all_demo_files()
+    except Exception:
+        pass
+
 # 4. Rebind database engine & sessionmaker to the empty temp database
 import backend.database as db_mod
 from sqlalchemy import create_engine
