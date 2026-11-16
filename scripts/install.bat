@@ -8,13 +8,29 @@ echo Enterprise RAG Chatbot - Automated Installation (Windows)
 echo ==============================================================================
 
 :: 1. Check Python installation and version
-where python >nul 2>nul
-if errorlevel 1 (
-    echo [ERROR] Python not found in PATH. Please install Python 3.11 to 3.13 and add it to PATH.
+set "PYTHON_CMD="
+where py >nul 2>nul
+if not errorlevel 1 (
+    for %%V in (3.11 3.12 3.13 3.14) do (
+        if not defined PYTHON_CMD (
+            py -%%V -c "import sys; sys.exit(0)" >nul 2>nul
+            if not errorlevel 1 set "PYTHON_CMD=py -%%V"
+        )
+    )
+)
+if not defined PYTHON_CMD (
+    where python >nul 2>nul
+    if not errorlevel 1 (
+        set "PYTHON_CMD=python"
+    )
+)
+
+if not defined PYTHON_CMD (
+    echo [ERROR] Python not found in PATH. Please install Python 3.11 to 3.13.
     exit /b 1
 )
 
-python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
+%PYTHON_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
 if errorlevel 1 (
     echo [ERROR] Python 3.11 or higher is required. Detected an older Python version.
     exit /b 1
@@ -23,7 +39,7 @@ if errorlevel 1 (
 :: 2. Create virtual environment if it does not already exist
 if not exist "venv\Scripts\python.exe" (
     echo [*] Creating Python virtual environment in 'venv'...
-    python -m venv venv
+    %PYTHON_CMD% -m venv venv
     if errorlevel 1 (
         echo [ERROR] Failed to create virtual environment.
         exit /b 1

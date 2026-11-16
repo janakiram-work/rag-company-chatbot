@@ -88,17 +88,18 @@ def check_data_dirs_writable():
     return "PASS", f"All {len(dirs)} storage directories writable"
 
 
-def check_port_free():
+def check_port_free(override_port: int = None):
     from backend.config import HOST, PORT
+    target_port = override_port or PORT
     test_host = "127.0.0.1" if HOST in ("0.0.0.0", "") else HOST
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         s.settimeout(1.0)
-        s.bind((test_host, PORT))
+        s.bind((test_host, target_port))
         s.close()
-        return "PASS", f"Port {PORT} on {HOST} is available"
+        return "PASS", f"Port {target_port} on {HOST} is available"
     except OSError:
-        return "FAIL", f"Port {PORT} on {HOST} is already in use by another process"
+        return "FAIL", f"Port {target_port} on {HOST} is already in use by another process"
     finally:
         try:
             s.close()
@@ -166,6 +167,11 @@ def check_models_cached():
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Preflight environment check utility.")
+    parser.add_argument("--port", type=int, default=None, help="Override port to check")
+    args = parser.parse_args()
+
     print("=" * 78)
     print("Enterprise RAG Chatbot - Preflight Environment Check")
     print("=" * 78)
@@ -175,7 +181,7 @@ def main():
         ("Disk Space (>= 5 GB)", check_disk_space),
         ("System Memory (RAM)", check_ram),
         ("Data Directories Write", check_data_dirs_writable),
-        ("Port Availability", check_port_free),
+        ("Port Availability", lambda: check_port_free(args.port)),
         ("JWT Secret Config", check_jwt_secret),
         ("Groq API Key Config", check_groq_api_key),
         ("Cookie Security Hint", check_cookie_secure_hint),
