@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
 cd /d "%~dp0\.."
 
@@ -11,18 +11,15 @@ echo ===========================================================================
 set "PYTHON_CMD="
 where py >nul 2>nul
 if not errorlevel 1 (
-    for %%V in (3.11 3.12 3.13 3.14) do (
-        if not defined PYTHON_CMD (
-            py -%%V -c "import sys; sys.exit(0)" >nul 2>nul
-            if not errorlevel 1 set "PYTHON_CMD=py -%%V"
-        )
-    )
+    py -3.14 -c "import sys; exit(0)" >nul 2>nul && set "PYTHON_CMD=py -3.14"
+    if not defined PYTHON_CMD py -3.13 -c "import sys; exit(0)" >nul 2>nul && set "PYTHON_CMD=py -3.13"
+    if not defined PYTHON_CMD py -3.12 -c "import sys; exit(0)" >nul 2>nul && set "PYTHON_CMD=py -3.12"
+    if not defined PYTHON_CMD py -3.11 -c "import sys; exit(0)" >nul 2>nul && set "PYTHON_CMD=py -3.11"
 )
+
 if not defined PYTHON_CMD (
     where python >nul 2>nul
-    if not errorlevel 1 (
-        set "PYTHON_CMD=python"
-    )
+    if not errorlevel 1 set "PYTHON_CMD=python"
 )
 
 if not defined PYTHON_CMD (
@@ -61,7 +58,7 @@ if errorlevel 1 (
     echo [*] Installing PyTorch (CPU-only)...
     %PIP_EXE% install torch --index-url https://download.pytorch.org/whl/cpu --quiet
     if errorlevel 1 (
-        echo [!] CPU index install failed; falling back to standard wheel...
+        echo [WARN] CPU index install failed; falling back to standard wheel...
         %PIP_EXE% install torch --quiet
     )
     echo [+] PyTorch installed.
