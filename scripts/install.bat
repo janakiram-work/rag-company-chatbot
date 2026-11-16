@@ -52,13 +52,13 @@ set "PIP_EXE=venv\Scripts\pip.exe"
 :: 3. Upgrade pip
 %PYTHON_EXE% -m pip install --upgrade pip --quiet
 
-:: 4. Install PyTorch (CPU-only wheel)
+:: 4. Install PyTorch CPU-only wheel
 %PYTHON_EXE% -c "import torch" >nul 2>nul
 if errorlevel 1 (
-    echo [*] Installing PyTorch (CPU-only)...
+    echo [*] Installing PyTorch CPU wheel...
     %PIP_EXE% install torch --index-url https://download.pytorch.org/whl/cpu --quiet
     if errorlevel 1 (
-        echo [WARN] CPU index install failed; falling back to standard wheel...
+        echo [WARN] CPU index install failed, falling back to standard wheel...
         %PIP_EXE% install torch --quiet
     )
     echo [+] PyTorch installed.
