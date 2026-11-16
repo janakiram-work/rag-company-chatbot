@@ -1,41 +1,4 @@
-export const getApiBaseUrl = (customBase = null) => {
-  if (customBase !== null && customBase !== undefined) {
-    return String(customBase).trim().replace(/\/+$/, '');
-  }
-  const envUrl =
-    (typeof process !== 'undefined' && process.env && process.env.VITE_API_BASE_URL) ||
-    (typeof import.meta !== 'undefined' && import.meta?.env && import.meta.env.VITE_API_BASE_URL) ||
-    '';
-  return envUrl.trim().replace(/\/+$/, '');
-};
-
-export const buildApiUrl = (endpoint = '', customBase = null) => {
-  const base = getApiBaseUrl(customBase);
-  let clean = endpoint ? (endpoint.startsWith('/') ? endpoint : `/${endpoint}`) : '';
-  if (clean && !clean.startsWith('/api')) {
-    clean = `/api${clean}`;
-  } else if (!clean) {
-    clean = '/api';
-  }
-  return base ? `${base}${clean}` : clean;
-};
-
-export const buildFileUrl = (url = '', customBase = null) => {
-  if (!url) return '';
-  if (
-    url.startsWith('http://') ||
-    url.startsWith('https://') ||
-    url.startsWith('blob:') ||
-    url.startsWith('data:')
-  ) {
-    return url;
-  }
-  const base = getApiBaseUrl(customBase);
-  const clean = url.startsWith('/') ? url : `/${url}`;
-  return base ? `${base}${clean}` : clean;
-};
-
-const API_BASE = buildApiUrl('');
+const API_BASE = '/api';
 
 export const getAuthToken = () => localStorage.getItem('app_token') || localStorage.getItem('acme_token');
 export const setAuthToken = (token) => {
@@ -121,7 +84,6 @@ export function formatError(err) {
 async function request(url, options = {}, isRetry = false) {
   const token = getAuthToken();
   const headers = {
-    'ngrok-skip-browser-warning': '1',
     ...(options.headers || {}),
   };
   if (token) {
@@ -211,7 +173,6 @@ async function request(url, options = {}, isRetry = false) {
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': '1',
           },
         });
         if (refreshRes.ok) {
@@ -236,7 +197,7 @@ async function request(url, options = {}, isRetry = false) {
         await fetch(`${API_BASE}/auth/logout`, {
           method: 'POST',
           credentials: 'include',
-          headers: { 'ngrok-skip-browser-warning': '1' },
+          headers: { },
         });
       } catch {}
 
@@ -443,8 +404,6 @@ export const apiUploadDocument = (file, conversationId = null, onUploadProgress 
     const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : '';
     xhr.open('POST', `${API_BASE}/documents/upload${query}`);
     xhr.withCredentials = true;
-
-    xhr.setRequestHeader('ngrok-skip-browser-warning', '1');
     const token = getAuthToken();
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -531,7 +490,6 @@ export async function apiStreamChatMessage(
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': '1',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ message, ...extraPayload }),
@@ -550,7 +508,6 @@ export async function apiStreamChatMessage(
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': '1',
           },
         });
         if (refreshRes.ok) {

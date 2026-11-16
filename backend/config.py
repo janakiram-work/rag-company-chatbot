@@ -125,7 +125,17 @@ def parse_allowed_origins(raw: str) -> list:
 
 
 ALLOWED_ORIGINS = parse_allowed_origins(os.getenv("ALLOWED_ORIGINS", ""))
-CROSS_SITE_COOKIES = os.getenv("CROSS_SITE_COOKIES", "false").lower() in ("true", "1", "yes")
+
+
+# Offline / Cached Models Directory
+_models_env = os.getenv("MODELS_DIR", os.getenv("HF_HOME", "")).strip()
+if _models_env:
+    MODELS_DIR = str(BASE_DIR / _models_env if not Path(_models_env).is_absolute() else Path(_models_env))
+    os.environ["HF_HOME"] = MODELS_DIR
+else:
+    MODELS_DIR = ""
+if MODELS_DIR:
+    os.makedirs(MODELS_DIR, exist_ok=True)
 
 # Embedding & Retrieval
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-en-v1.5")

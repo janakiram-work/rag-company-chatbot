@@ -136,7 +136,6 @@ All settings are managed via `.env`. A complete configuration template is availa
 | `BEHIND_PROXY` | `false` | No | Trust reverse proxy headers (`X-Forwarded-Proto`, `X-Forwarded-For`). |
 | `PUBLIC_URL` | `""` | No | Publicly accessible root URL (e.g. `https://chat.example.com`). |
 | `ALLOWED_ORIGINS`| `""` | No | Comma-separated exact CORS allowed origins (no wildcards, no trailing slashes). |
-| `CROSS_SITE_COOKIES` | `false` | No | When `true`, sets `SameSite=None` + `Secure=true` and requires valid `Origin` on state-changing requests. |
 | `BUILD_VERSION` | `1.0.0` | No | Deployment release version string. |
 | `COMPANY_NAME` | `Company Assistant` | No | Default company name shown in header and titles. |
 
@@ -173,6 +172,7 @@ All settings are managed via `.env`. A complete configuration template is availa
 | `CHROMA_PERSIST_DIR` | `chroma_data` | No | Legacy alias for `CHROMA_DIR`. |
 | `UPLOAD_DIR` | `uploads` | No | Directory for uploaded documents and images. |
 | `LOG_DIR` | `logs` | No | Directory for structured JSON request logs. |
+| `MODELS_DIR` | `""` | No | Directory for cached offline AI models (Hugging Face / EasyOCR). |
 | `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | No | Sentence-transformers vector embedding model. |
 | `SIMILARITY_THRESHOLD` | `0.35` | No | Minimum cosine similarity gate for company retrieval. |
 | `TOP_K_CHUNKS` | `5` | No | Maximum number of chunks returned for generation context. |
@@ -247,68 +247,29 @@ python scripts/prune_users.py --keep admin@example.com user@example.com --apply
 
 ---
 
-## 7. Production Deployment Overview
+## 7. Deploy on Your Server
 
-For detailed systemd service files, Nginx reverse proxy configurations, and automated backup scripts, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+The application is packaged as a clean, **single-origin deployment**: FastAPI serves the REST API, Server-Sent Events (SSE), and the built React SPA frontend from one URL. No external CORS or tunnel setup is required.
 
-### 7.1 Deployment Topologies: Same-Origin vs. Cross-Origin Mode
+### Quick Start (One Command Installation)
 
-The application supports two deployment topologies:
+#### Windows
+```cmd
+scripts\install.bat
+venv\Scripts\python.exe scripts\create_admin.py
+run.bat
+```
 
-#### Mode A: Same-Origin Deployment (Recommended for Real Users)
-In same-origin mode, the frontend and backend share the identical scheme and hostname (typically via an Nginx/Caddy reverse proxy routing `/` to the frontend static files and `/api` to Uvicorn, or with FastAPI serving the static bundle directly).
+#### Linux / macOS
+```bash
+chmod +x scripts/install.sh run.sh
+./scripts/install.sh
+venv/bin/python scripts/create_admin.py
+./run.sh
+```
 
-* **Backend `.env`**:
-  ```ini
-  ALLOWED_ORIGINS=
-  CROSS_SITE_COOKIES=false
-  COOKIE_SECURE=true      # true behind HTTPS, false for local HTTP dev
-  BEHIND_PROXY=true       # true when behind Nginx
-  ```
-* **Frontend `.env` (build-time)**:
-  ```ini
-  VITE_API_BASE_URL=      # empty string (uses relative /api paths)
-  ```
-
-#### Mode B: Cross-Origin Deployment (Optional, e.g. Frontend on Vercel, Backend behind Ngrok/Render)
-In cross-origin mode, the frontend is hosted on a different domain (e.g., `https://frontend.vercel.app`) and communicates with a backend hosted on another domain (e.g., `https://backend.ngrok-free.app`).
-
-* **Backend `.env`**:
-  ```ini
-  ALLOWED_ORIGINS=https://frontend.vercel.app
-  CROSS_SITE_COOKIES=true
-  COOKIE_SECURE=true
-  ```
-* **Frontend `.env` (build-time)**:
-  ```ini
-  VITE_API_BASE_URL=https://backend.ngrok-free.app
-  ```
-
-> [!WARNING]
-> **Third-Party Cookie Blocking in Cross-Origin Mode**
-> Modern web browsers enforce strict third-party cookie restrictions. When the frontend and backend reside on different origins, cookies set by the backend are treated as third-party cookies and blocked on multiple platforms:
-
-| Browser / Environment | Third-Party Cookie Policy | Cross-Origin Mode Behavior | Same-Origin Mode Behavior |
-|---|---|---|---|
-| **Apple Safari (macOS)** | Blocked by default via Intelligent Tracking Prevention (ITP) | Authentication cookies rejected; login fails | **Fully functional** |
-| **iOS / iPadOS (All Browsers)** | Blocked by default (WebKit engine policy) | Authentication cookies rejected; login fails | **Fully functional** |
-| **Google Chrome / Microsoft Edge** | Blocked in Incognito; phased rollout of 3PC restrictions | Authentication cookies rejected; login fails | **Fully functional** |
-| **Mozilla Firefox** | Blocked by default via Total Cookie Protection | Partitioned / rejected; session persistence fails | **Fully functional** |
-
-**Recommendation for Production:** Always deploy under a **same-origin topology** (or a shared root domain with reverse proxy) for real users and production environments to guarantee seamless cookie-based authentication across all browsers and devices without third-party cookie blocking issues.
-
-### 7.2 Essential Deployment Rules
-
-1. **Single Worker Process**: Run Uvicorn with `workers=1`. In-process pub/sub (`/api/events`) and chat concurrency control require a single worker.
-2. **Reverse Proxy Buffering**: Nginx must disable proxy buffering for SSE routes (`/api/chat/messages` and `/api/events`):
-   ```nginx
-   location /api/chat/messages {
-       proxy_buffering off;
-       chunked_transfer_encoding on;
-       proxy_pass http://127.0.0.1:8000;
-   }
-   ```
-3. **Cookie Security**: Ensure `COOKIE_SECURE=true` is set only when accessing via HTTPS with valid TLS certificates.
+### Full Deployment Guide
+For complete operational documentation—including systemd service units (`deploy/ragchat.service`), Nginx reverse proxy (`deploy/nginx.conf`), Caddy auto-HTTPS (`deploy/Caddyfile`), Windows background service via NSSM (`deploy/windows-service.md`), air-gapped model pre-caching, backup/restore procedures, and troubleshooting—see **[DEPLOY.md](DEPLOY.md)**.
 
 ---
 
@@ -376,7 +337,7 @@ python scripts/smoke_test.py --url http://127.0.0.1:8000
 | Model download fails or hangs | Firewall or corporate proxy blocking Hugging Face. | Set `HF_HUB_ENABLE_HF_TRANSFER=0` or configure `HTTP_PROXY`/`HTTPS_PROXY` in environment. |
 | `Groq Rate Limit (429)` | Daily token or RPM quota exceeded on Groq API. | The assistant displays a friendly fallback notice. Upgrade Groq tier or adjust `MAX_CONCURRENT_CHATS`. |
 | Login Loop (Redirects back to login) | `COOKIE_SECURE=true` set over plain HTTP. | Set `COOKIE_SECURE=false` in `.env` if accessing over HTTP without TLS. |
-| Chat tokens arrive all at once | Proxy buffering enabled in reverse proxy. | Set `proxy_buffering off;` and `chunked_transfer_encoding on;` in Nginx for `/api/chat/messages`. Note: free Cloudflare Quick Tunnels buffer SSE. |
+| Chat tokens arrive all at once | Proxy buffering enabled in reverse proxy. | Set `proxy_buffering off;` and `chunked_transfer_encoding on;` in Nginx for `/api/chat/messages`. |
 | `No module named dotenv` | Script executed outside the virtual environment. | Activate the virtual environment (`source venv/bin/activate` or `.\venv\Scripts\activate`) before running scripts. |
 | High Memory / Out of Memory | Heavy concurrent OCR or PDF rendering. | Reduce `MAX_HEAVY_TASKS=1` in `.env` and ensure `WARMUP_OCR=false`. |
 | Administrator locked out | Lost admin password. | Run `python scripts/set_password.py <admin-email>` to reset the password directly via CLI. |

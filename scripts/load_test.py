@@ -66,7 +66,6 @@ def simulate_user(user_idx: int, base_url: str, questions: list):
     session.headers.update({
         "X-Forwarded-For": ip,
         "X-Forwarded-Proto": "https",
-        "ngrok-skip-browser-warning": "1",
     })
 
     email = f"loadtest_user_{user_idx}_{int(time.time())}@example.com"
@@ -139,7 +138,6 @@ def simulate_admin(base_url: str):
     session.headers.update({
         "X-Forwarded-For": "198.51.100.1",
         "X-Forwarded-Proto": "https",
-        "ngrok-skip-browser-warning": "1",
     })
 
     admin_results = {"success": 0, "failed": 0, "endpoints": []}

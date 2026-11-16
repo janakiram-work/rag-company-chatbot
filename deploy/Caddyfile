@@ -1,0 +1,30 @@
+# Caddyfile for Enterprise RAG Chatbot
+# Caddy automatically provisions and renews SSL certificates (Let's Encrypt / ZeroSSL).
+# Replace chat.example.com with your domain name or server IP address.
+
+chat.example.com {
+    # Reverse proxy to the Uvicorn application server
+    reverse_proxy 127.0.0.1:8000 {
+        # Pass client headers
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Long read timeout for streaming LLM responses and document OCR
+        transport http {
+            read_timeout 300s
+            write_timeout 300s
+        }
+    }
+
+    # Request size limit matching 25MB document limit
+    request_body {
+        max_size 25MB
+    }
+
+    # Structured access logging
+    log {
+        output file logs/caddy_access.log
+    }
+}

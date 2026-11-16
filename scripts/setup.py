@@ -1,6 +1,7 @@
 """Non-interactive server setup script.
-Creates .env from .env.example with a cryptographically secure JWT_SECRET,
-ensures required storage and log directories exist.
+Creates .env from .env.example with a cryptographically secure JWT_SECRET.
+Never overwrites an existing .env.
+Ensures required storage and log directories exist.
 """
 
 import os
@@ -13,9 +14,11 @@ ENV_FILE = BASE_DIR / ".env"
 ENV_EXAMPLE = BASE_DIR / ".env.example"
 
 REQUIRED_DIRS = [
+    BASE_DIR / "data",
     BASE_DIR / "uploads" / "docs",
     BASE_DIR / "uploads" / "images",
     BASE_DIR / "uploads" / "rendered_pages",
+    BASE_DIR / "uploads" / "branding",
     BASE_DIR / "chroma_data",
     BASE_DIR / "logs",
 ]
@@ -24,12 +27,12 @@ REQUIRED_DIRS = [
 def ensure_directories():
     for d in REQUIRED_DIRS:
         d.mkdir(parents=True, exist_ok=True)
-    print("[+] Verified required directories (uploads/, chroma_data/, logs/).")
+    print("[+] Verified required directories (data/, uploads/, chroma_data/, logs/).")
 
 
 def setup_env():
-    if ENV_FILE.exists() and "--force" not in sys.argv:
-        print("[!] .env already exists. Preserving existing configuration.")
+    if ENV_FILE.exists():
+        print("[!] .env already exists. Preserving existing configuration (never overwritten).")
         return
 
     if not ENV_EXAMPLE.exists():
@@ -61,8 +64,9 @@ def setup_env():
     print("[+] Created .env file from .env.example with secure random JWT_SECRET.")
     print("[i] Next steps:")
     print("    1. Edit .env and enter your GROQ_API_KEY.")
-    print("    2. Run 'python scripts/download_models.py' to pre-cache AI models.")
-    print("    3. Start the application using 'run.bat' (Windows) or './run.sh' (Linux).")
+    print("    2. Run 'python scripts/create_admin.py' to create the initial admin user.")
+    print("    3. Run 'python scripts/download_models.py' to pre-cache AI models.")
+    print("    4. Start the application using 'run.bat' (Windows) or './run.sh' (Linux).")
 
 
 def main():

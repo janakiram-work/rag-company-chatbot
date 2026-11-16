@@ -19,7 +19,12 @@ def get_ocr_reader():
     global _easyocr_reader
     if _easyocr_reader is None:
         import easyocr
-        _easyocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+        from backend.config import MODELS_DIR
+        model_storage = os.path.join(MODELS_DIR, "easyocr") if MODELS_DIR else None
+        if model_storage and os.path.isdir(model_storage):
+            _easyocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False, model_storage_directory=model_storage)
+        else:
+            _easyocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
     return _easyocr_reader
 
 
@@ -97,11 +102,20 @@ class ExtractedSection:
 
 
 def sanitize_filename(filename: str) -> str:
-    """Strip dangerous characters and keep filename clean."""
-    filename = Path(filename).name
-    # Keep alphanumeric, dot, dash, underscore
-    cleaned = re.sub(r"[^\w\.-]", "_", filename)
-    return cleaned.strip("._") or "document"
+    """Strip dangerous characters and keep filename clean, safe across Windows and Linux."""
+    normalized = filename.replace("\\", "/")
+    base_name = Path(normalized).name
+    cleaned = re.sub(r"[^\w\.-]", "_", base_name)
+    sanitized = cleaned.strip("._") or "document"
+    stem_upper = Path(sanitized).stem.upper()
+    reserved_names = {
+        "CON", "PRN", "AUX", "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+    if stem_upper in reserved_names:
+        sanitized = f"doc_{sanitized}"
+    return sanitized
 
 
 def validate_file(file_bytes: bytes, filename: str) -> str:

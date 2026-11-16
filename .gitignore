@@ -48,6 +48,7 @@ old_project/
 data/.jwt_secret
 data/
 check*.py
+!scripts/check_env.py
 
 # Frontend distribution (must be tracked for production deployment without requiring node)
 !frontend/dist/
