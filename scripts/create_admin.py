@@ -68,9 +68,7 @@ def create_or_reset_admin(email: str, password: str, confirm_password: str) -> b
             user.password_hash = get_password_hash(password)
             user.role = "admin"
             user.is_active = True
-            user.is_verified = True
             user.must_change_password = False
-            user.failed_login_attempts = 0
             user.token_version = (user.token_version or 0) + 1
             log_audit(db, actor_id=user.id, action="admin_reset_cli", target=user.email, details="CLI create_admin reset")
             db.commit()
@@ -92,9 +90,7 @@ def create_or_reset_admin(email: str, password: str, confirm_password: str) -> b
                 password_hash=get_password_hash(password),
                 role="admin",
                 is_active=True,
-                is_verified=True,
                 must_change_password=False,
-                failed_login_attempts=0,
                 token_version=1,
             )
             db.add(new_admin)
